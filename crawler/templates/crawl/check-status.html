@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h1 class="text-center fs-3 font-monospace">{% block title %}Check Status{% endblock %}</h1>
+
+  <div class="row">
+    {% for row in rows %}
+      <div class="col-lg-4 col-md-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <p>status_id={{row['status_id']}}</p>
+            <p>task_id={{row['task_id']}}</p>
+            <p>status={{row['name']}}</p>
+            <p>website_url={{row['website_url']}}</p>
+            <p>url_address={{row['url_address']}}</p>
+            <div>
+              <a href="{{url_for('crawl.get_task_state', task_id=row['task_id'])}}" class="btn btn-dark rounded-0">Refresh</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

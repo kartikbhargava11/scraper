@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+
+{% block content %}
+  <h1 class="text-center fs-3 font-monospace">{% block title %}Markup Content of {{ row['url_address'] }}{% endblock %}</h1>
+  <h2 class="text-center fs-5 fw-light">This service returns the markdown of the entered URL</h2>
+  <div class="row">
+    <div class="col-lg-6 offset-lg-3">
+      {{ row['html'] }}
+    </div>
+  </div>
+{% endblock %}

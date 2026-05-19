@@ -1,0 +1,11 @@
+section .container {
+    background-color: #FBF6F6;
+}
+
+.external a {
+    color: #2C5EAD;
+}
+
+.external a:hover {
+    color: #232F72;
+}

@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1 class="fs-3 font-monospace">{% block title %}Reliable, large-scale web extraction, built to be drastically more cost-effective than any of the existing solutions.{% endblock %}</h1>
+    <h2 class="fs-4 fw-light">We deliver blazing-fast, AI-ready web crawling tailored for large language models, AI agents, and data pipelines. Fully built for real-time performance.</h2>
+
+    <h2 class="fs-4 my-4">Services</h2>
+
+    <div class="row">
+        <div class="col-md-3 d-grid gap-2">
+            <a class="btn btn-lg d-block btn-dark mb-3" href="{{url_for('crawl.scrape_links')}}">Scrape Links</a>
+        </div>
+        <div class="col-md-3 d-grid gap-2">
+            <a class="btn btn-lg d-block btn-dark mb-3" href="{{url_for('crawl.scrape_markup_bulk')}}">Scrape Content [Bulk]</a>
+        </div>
+    </div>
+{% endblock %}

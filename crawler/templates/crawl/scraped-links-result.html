@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Result{% endblock %}
+
+{% block content %}
+  <h1 class="text-center fs-3 font-monospace">Internal Links of {{row['website_url']}}</h1>
+  <h2 class="text-center fs-5 fw-light">Stay within the same domain (don't follow external links) - Each result contains metadata like the crawl depth - Results are returned as a list after all crawling is complete</h2>
+  <h3 class="text-center fs-5 fw-bold">Total Links Found: {{count}}</h3>
+  <div class="d-flex gap-2 my-4">
+    <form>
+      <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
+    </form>
+    <form>
+      <input type="submit" class="btn btn-outline-primary rounded-0" value="Crawl Again">
+    </form>
+  
+  
+    <form>
+      <input type="submit" class="btn btn-success rounded-0" value="Fetch Markups [ALL]">
+    </form>
+  
+
+    <form method="POST" action="{{url_for('crawl.delete_website_url', website_id=row['website_id'])}}">
+      <input type="submit" class="btn btn-danger rounded-0" value="Delete Links [ALL]">
+    </form>
+    
+  </div>
+  <table class="table table-striped">
+    <thead>
+      <th scope="col">#</th>
+      <th scope="col">WID</th>
+      <th scope="col">UID</th>
+      <th scope="col">URL</th>
+      <th scope="col">Depth</th>
+      <th scope="col">Markup</th>
+      <th scope="col">Action</th>
+    </thead>
+    <tbody>
+      {% for index in range(count) %}
+      <tr>
+        <th scope="row">{{ index + 1 }}</th>
+        <td>
+          {{rows[index]['website_id']}}
+        </td>
+        <td>
+          {{rows[index]['url_id']}}
+        </td>
+        <td class="external">
+          <a class="fs-6 fw-light" href="{{rows[index]['url_address']}}" target="_blank" rel="nofollow">{{rows[index]['url_address']}}</a>
+        </td>
+        <td>
+          {{rows[index]['depth']}}
+        </td>
+        <td>
+          {% if rows[index]['content_id'] %}
+          ✅
+          {% else %}
+          ❌
+          {% endif %}
+        </td>
+        <td>
+          {% if rows[index]['content_id'] %}
+            <div class="d-grid">
+              <a href="{{ url_for('crawl.view_scraped_content', content_id=rows[index]['content_id']) }}" class="btn btn-success rounded-0">
+                View
+              </a>
+            </div>
+          {% else %}
+            <form method="POST" action="{{ url_for('crawl.scrape_markup') }}">
+              <input type="hidden" name="url" value="{{rows[index]['url_address']}}">
+              <input type="hidden" name="url_id" value="{{rows[index]['url_id']}}">
+              <input type="hidden" name="website_id" value="{{rows[index]['website_id']}}">
+              <input type="submit" class="btn btn-outline-primary rounded-0" value="Fetch HTML ⚡️">
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

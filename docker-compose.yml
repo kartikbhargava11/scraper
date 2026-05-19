@@ -1,0 +1,39 @@
+# this file provisions and links three isolated service blocks: Redis, the Flask Web App, and the Celery Worker. 
+# isolated containers will be created. there is also an internal network bridge where containers can communicate easily
+# by calling each other's service names.
+
+services: # list of services to be used
+  redis: # 1. The Redis Message Broker
+    image: redis # download an official redis image
+    container_name: crawler_redis # given name to the container
+    ports:
+      - "6379:6379" # maps port from inside docker to our physical port to monitor it locally
+  web: # flask application
+    build: . # tells docker to run dockerfile in the current folder to create this container
+    container_name: flask_web_app # name given to container running flask application
+    # chained shell command
+    # initialize the database
+    # starts the flask server on 0.0.0.0
+    command: sh -c "flask init-db && flask run --host=0.0.0.0 --port=5001 --debug" 
+    environment:
+      - FLASK_APP=crawler
+    ports:
+      - "5001:5001" # maps port to our machine so we can visit http://localhost:5001
+    volumes:
+      - .:/app # mounts physical folder into the container's /app folder. If changes were made on our machine, the container sees it immediately and restarts itself without us needing to rebuild the image. 
+    depends_on:
+      - redis # ensures redis container to be fully operational before starting up
+  celery_worker: # celery service handles background tasks and queue executions
+    build: . # tells docker to run dockerfile in the current folder to create this container
+    container_name: celery_worker # name given to this container running celery
+    
+    # invokes celery CLI
+    # -A crawler.celery_global_instance -> -A is an application flag, tells celery where to find our configured instance
+    # worker -> tells celery to start a background worker. This worker sits quitely in memory and waits for a job to be given by flask app
+    # --loglevel=info -> prints info onto the terminal
+    # --broker=redis://redis:6379/0 is an important bit in the command -> it enables celery container to communicate with redis container.
+    command: celery -A crawler.celery_global_instance -b redis://redis:6379/0 worker --loglevel=info
+    volumes:
+      - .:/app # mounts physical folder into the container's /app folder. If changes were made on our machine, the container sees it immediately and restarts itself without us needing to rebuild the image. 
+    depends_on:
+      - redis # ensures redis container to be fully operational before starting up
