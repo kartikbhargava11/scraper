@@ -21,7 +21,7 @@ async def scrape_html(url):
     return html
 
 @celery_global_instance.task(ignore_result=False)
-def scrape_markup_task(url, url_id):
+def scrape_markup_task(url, url_id, website_id):
     try:
         # Check if an event loop is already assigned to this worker thread
         loop = asyncio.get_event_loop()
@@ -45,20 +45,18 @@ def scrape_markup_task(url, url_id):
                 
                 db.execute(
                     """
-                    INSERT OR IGNORE INTO content (html, url_id)
+                    INSERT OR IGNORE INTO markup (html, url_id, website_id)
                     VALUES (?,?)
                     """,
-                    (html, url_id)
+                    (html, url_id, website_id)
                 )
-                db.commit()
+                
+
         except sqlite3.Error as e:
             db.rollback()
             print(f"Exception {e}")
         else:
-            soup = BeautifulSoup(html, 'html.parser')
-
-            titles = soup.find_all('title')
-            h1 = soup.find_all('h1')
+            db.commit()
             
     return html
 
@@ -86,7 +84,7 @@ def scrape_links_task(url):
             ).fetchone()
 
             if row:
-                website_id = row[0]
+                website_id = row['website_id']
                 
                 for _url, depth in dedup_links.items():
                     data_in_list.append((_url, depth, website_id))

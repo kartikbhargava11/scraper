@@ -1,5 +1,5 @@
 import asyncio
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, JsonCssExtractionStrategy
 from crawl4ai.async_configs import CacheMode, ProxyConfig
 from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy, AsyncHTTPCrawlerStrategy
@@ -78,10 +78,15 @@ human_behavior_script_two = """
 _base_browser_config = BrowserConfig(
 	headless=True,
 	headers=HEADERS,
-	viewport_width=1920,
-    viewport_height=1080,
+	viewport_width=800,
+    viewport_height=600,
 	user_agent_mode="random",
-	extra_args=["--disable-extensions"],
+	extra_args=[
+		"--disable-extensions",
+		"--disable-gpu",  # Disable GPU acceleration
+		"--disable-dev-shm-usage",  # Disable /dev/shm usage
+		"--no-sandbox",  # Required for Docker
+	],
 	text_mode=False,
 	avoid_css=True,
 	avoid_ads=True,
@@ -207,6 +212,8 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
 
 	bfs_browser_config = _base_browser_config.clone(
 		enable_stealth=True,
+		viewport_width=1920,
+    	viewport_height=1080,
 	)
 
 	filter_chain = FilterChain([
@@ -295,7 +302,7 @@ async def _scrape_content(url):
 	if not html:
 		stealth_browser_config = _base_browser_config.clone(
 			text_mode=False,
-			enable_stealth=True
+			enable_stealth=True,
 		)
 
 		stealth_run_config = _base_crawler_run_config.clone(
@@ -326,7 +333,9 @@ async def _scrape_content(url):
 			undetected_browser_config = _base_browser_config.clone(
 				text_mode=False,
 				enable_stealth=True,
-				headless=False
+				headless=False,
+				viewport_width=1920,
+    			viewport_height=1080,
 			)
 
 			undetected_run_config = _base_crawler_run_config.clone(

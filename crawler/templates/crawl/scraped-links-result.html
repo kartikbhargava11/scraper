@@ -51,16 +51,16 @@
           {{rows[index]['depth']}}
         </td>
         <td>
-          {% if rows[index]['content_id'] %}
+          {% if rows[index]['markup_id'] %}
           ✅
           {% else %}
           ❌
           {% endif %}
         </td>
         <td>
-          {% if rows[index]['content_id'] %}
+          {% if rows[index]['markup_id'] %}
             <div class="d-grid">
-              <a href="{{ url_for('crawl.view_scraped_content', content_id=rows[index]['content_id']) }}" class="btn btn-success rounded-0">
+              <a href="{{ url_for('crawl.view_scraped_content', markup_id=rows[index]['markup_id']) }}" class="btn btn-success rounded-0">
                 View
               </a>
             </div>

@@ -1,11 +1,12 @@
 import functools
 
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, session, url_for
+    Blueprint, g, redirect, render_template, request, session, url_for
 )
 
 from werkzeug.security import check_password_hash, generate_password_hash
 from crawler.db import get_db
+from crawler.helper import _flash_success_alert, _flash_error_alert
 
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -35,9 +36,10 @@ def register():
             except db.IntegrityError:
                 error = f"User {username} already registered"
             else:
+                _flash_success_alert('Registered Successfully. Please LOG IN!')
                 return redirect(url_for("auth.login"))
         
-        flash(error, category='error')
+        _flash_error_alert(error)
 
     return render_template('auth/register.html')
 
@@ -64,15 +66,17 @@ def login():
             session.clear()
             session['user_id'] = user['user_id']
             next = request.args.get('next') or url_for('index')
-            flash('Login Successful', category='success')
+
+            _flash_success_alert('Login Successful')
             return redirect(next)
-        flash(error, category='error')
+        _flash_error_alert(error)
 
     return render_template('auth/login.html')
 
 @bp.route('/logut')
 def logout():
     session.clear()
+    _flash_success_alert('Logged out Successfully')
     return redirect(url_for('index'))
 
 @bp.before_app_request
