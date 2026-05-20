@@ -46,12 +46,58 @@ def scrape_markup_task(url, url_id, website_id):
                 db.execute(
                     """
                     INSERT OR IGNORE INTO markup (html, url_id, website_id)
-                    VALUES (?,?)
+                    VALUES (?,?,?)
                     """,
                     (html, url_id, website_id)
                 )
-                
 
+                soup = BeautifulSoup(html, 'html.parser')
+
+                title = []
+                headings1 = []
+                headings2 = []
+                alt = []
+                for tag in soup.find_all(['title', 'h1', 'h2', 'img']):
+                    if tag.name == 'title':
+                        title.append((str(tag), url_id))
+                    elif tag.name == 'h1':
+                        headings1.append((str(tag), url_id))
+                    elif tag.name == 'h2':
+                        headings2.append((str(tag), url_id))
+                    elif tag.name == 'img':
+                        if tag.has_attr('alt'):
+                            alt.append((tag['alt'], str(tag), url_id))
+                        else:
+                            alt.append((None, str(tag), url_id))
+
+                db.executemany(
+                    """
+                    INSERT OR IGNORE INTO title_tag (title, url_id)
+                    VALUES (?,?)
+                    """,
+                    title
+                )
+                db.executemany(
+                    """
+                    INSERT OR IGNORE INTO h1_tag (h1, url_id)
+                    VALUES (?,?)
+                    """,
+                    headings1
+                )
+                db.executemany(
+                    """
+                    INSERT OR IGNORE INTO h2_tag (h2, url_id)
+                    VALUES (?,?)
+                    """,
+                    headings2
+                )
+                db.executemany(
+                    """
+                    INSERT OR IGNORE INTO img_alt_tag (alt_text, img_tag, url_id)
+                    VALUES (?,?,?)
+                    """,
+                    alt
+                )
         except sqlite3.Error as e:
             db.rollback()
             print(f"Exception {e}")

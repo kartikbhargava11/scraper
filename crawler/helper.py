@@ -3,6 +3,7 @@ from functools import partial
 from flask import flash
 from crawler.db import get_db
 
+
 from crawler.task import scrape_links_task, scrape_markup_task
 
 # Helper function to check the validity of the URL, using regular expression

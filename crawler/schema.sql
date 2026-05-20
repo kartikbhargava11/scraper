@@ -1,8 +1,11 @@
 DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS website;
 DROP TABLE IF EXISTS internal_url;
-DROP TABLE IF EXISTS content;
-DROP TABLE IF EXISTS tag;
+DROP TABLE IF EXISTS markup;
+DROP TABLE IF EXISTS title_tag;
+DROP TABLE IF EXISTS h1_tag;
+DROP TABLE IF EXISTS h2_tag;
+DROP TABLE IF EXISTS img_alt_tag;
 DROP TABLE IF EXISTS status_type;
 DROP TABLE IF EXISTS check_status;
 
@@ -33,8 +36,6 @@ CREATE TABLE markup (
     html TEXT NOT NULL,
     url_id INTEGER NOT NULL,
     website_id INTEGER NOT NULL,
-    crawl_status_code INTEGER NOT NULL,
-    total_img_tags INTEGER NOT NULL,
     created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id)
     FOREIGN KEY (website_id) REFERENCES internal_url (website_id) ON DELETE CASCADE
@@ -59,6 +60,15 @@ CREATE TABLE h1_tag (
 CREATE TABLE h2_tag (
     h2_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
     h2 TEXT NOT NULL,
+    url_id INTEGER NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE
+);
+
+CREATE TABLE img_alt_tag (
+    img_alt_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alt_text TEXT DEFAULT NULL,
+    img_tag TEXT NOT NULL,
     url_id INTEGER NOT NULL,
     created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE

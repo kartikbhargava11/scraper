@@ -73,10 +73,19 @@ def get_scraped_links(website_id):
         """
         SELECT i.url_id, i.url_address, i.depth, i.website_id, i.created, m.markup_id
         FROM internal_url i
-        LEFT JOIN markup m ON i.url_id = c.url_id
+        LEFT JOIN markup m ON i.url_id = m.url_id
         WHERE i.website_id = ?
         """, (website_id,)
     ).fetchall()
+
+    row3 = db.execute(
+        """
+        SELECT *
+        FROM h1_tag
+        """
+    ).fetchall()
+
+    print(f"OVERALL SIZE {len(row3)}")
 
     return render_template("crawl/scraped-links-result.html", rows=rows, row=row, count=len(rows))
 
@@ -96,31 +105,56 @@ def scrape_markup():
         # initiate_task()
         # -> invokes celery to push a crawling task
         # -> saves task status to the database
-        error = initiate_task(url, 'scrape_html_task', url_id=url_id, website_id=website_id)
+        error = initiate_task(url, 'scrape_markup_task', url_id=url_id, website_id=website_id)
         if error is None:
             _flash_info_alert("Process in queue")
             return redirect(url_for('crawl.get_status'))
     _flash_error_alert(error)
     return redirect('crawl.get_status')
 
-@bp.route('/scraped-markup/<markup_id>', methods=('GET',))
+@bp.route('/scraped-markup/<url_id>/<markup_id>', methods=('GET',))
 @login_required
-def view_scraped_content(markup_id):
+def view_scraped_content(url_id, markup_id):
     db = get_db()
     error = None
-    row = db.execute(
+
+
+    titles = db.execute(
         """
-        SELECT m.markup_id, m.html, m.created, m.url_id, i.url_address
-        FROM markup m
-        LEFT JOIN internal_url i ON m.url_id = i.url_id
-        WHERE markup_id = ?
-        """, (markup_id,)
+        SELECT title FROM title_tag
+        WHERE url_id = ?
+        """, (url_id,)
+    ).fetchall()
+
+    h1 = db.execute(
+        """
+        SELECT h1 FROM h1_tag
+        WHERE url_id = ?
+        """, (url_id,)
+    ).fetchall()
+
+    h2 = db.execute(
+        """
+        SELECT h2 FROM h2_tag
+        WHERE url_id = ?
+        """, (url_id,)
+    ).fetchall()
+
+    alt = db.execute(
+        """
+        SELECT alt_text, img_tag FROM img_alt_tag
+        WHERE url_id = ?
+        """, (url_id,)
+    ).fetchall()
+
+    missing_alt = db.execute(
+        """
+        SELECT count(*) as cnt FROM img_alt_tag
+        WHERE url_id = ? AND alt_text IS NULL;
+        """, (url_id,)
     ).fetchone()
 
-    if not row:
-        error = 'Not Found'
-        _flash_error_alert(error)
-    return render_template('crawl/scrape-markup.html', row=row)
+    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt)
 
 @bp.route('/scrape-markup-bulk', methods=('GET',))
 @login_required
