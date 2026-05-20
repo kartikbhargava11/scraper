@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import asyncio
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, JsonCssExtractionStrategy
 from crawl4ai.async_configs import CacheMode, ProxyConfig
@@ -16,7 +18,7 @@ from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, Domain
 # This can significantly improve scraping performance, especially for large or complex pages.
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 
-
+load_dotenv()
 
 HEADERS = { # browser identity
 	'Accept-Language': 'en-US',
@@ -248,8 +250,8 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
 			ProxyConfig.DIRECT,
 			ProxyConfig(
 				server="http://81.92.195.133:8800",
-				username="162844",
-				password="FQmfCN6DSW"
+				username=os.environ['PROXY_USERNAME'],
+				password=os.environ['PROXY_PASSWORD']
 			)
 		],
 	)
@@ -317,8 +319,8 @@ async def _scrape_content(url):
 			ProxyConfig.DIRECT,
 				ProxyConfig(
 					server="http://81.92.195.85:8800",
-					username="162844",
-					password="FQmfCN6DSW"
+					username=os.environ['PROXY_USERNAME'],
+					password=os.environ['PROXY_PASSWORD']	
 				),
 			],
 		)
@@ -350,8 +352,8 @@ async def _scrape_content(url):
 				ProxyConfig.DIRECT,
 					ProxyConfig(
 						server="http://81.92.195.133:8800",
-						username="162844",
-						password="FQmfCN6DSW"
+						username=os.environ['PROXY_USERNAME'],
+						password=os.environ['PROXY_PASSWORD']
 					),
 				],
 			)

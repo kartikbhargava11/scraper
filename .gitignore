@@ -1,5 +1,7 @@
 .venv/
 
+.DS_Store
+
 *.pyc
 __pycache__/
 
@@ -12,3 +14,5 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+.env

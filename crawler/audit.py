@@ -1,7 +1,8 @@
 import os
-import re
-import json
+from dotenv import load_dotenv
 from typing import List, Dict
+
+load_dotenv()
 
 import asyncio
 from crawl4ai import AsyncWebCrawler, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy
@@ -288,8 +289,8 @@ async def _try_stealth(urls):
 		ProxyConfig.DIRECT,
 			ProxyConfig(
 				server="http://81.92.195.85:8800",
-				username="162844",
-				password="FQmfCN6DSW"
+				username=os.environ['PROXY_USERNAME'],
+				password=os.environ['PROXY_PASSWORD']
 			),
 		],
 	)
@@ -325,8 +326,8 @@ async def _try_undetected_and_stealth(urls):
 		ProxyConfig.DIRECT,
 			ProxyConfig(
 				server="http://81.92.195.133:8800",
-				username="162844",
-				password="FQmfCN6DSW"
+				username=os.environ['PROXY_USERNAME'],
+				password=os.environ['PROXY_PASSWORD']
 			)
 		],
 	)

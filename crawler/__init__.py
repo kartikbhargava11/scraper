@@ -1,11 +1,15 @@
 import os
+from dotenv import load_dotenv
 
 from flask import Flask
 # It's a task queue and task scheduler
 from celery import Celery, Task
 
+# load variables from .env into system environment variables
+load_dotenv()
+
 # global object, tasks will be attched to his global object
-celery_global_instance = Celery("tasks", broker='redis://redis:6379/0', backend='redis://redis:6379/0')
+celery_global_instance = Celery("tasks", broker=os.environ['BROKER_URL'], backend=os.environ['RESULT_BACKEND'])
 
 # Tell Celery to scan 'task.py' for @shared_task tags immediately
 celery_global_instance.autodiscover_tasks(['crawler.task'], force=True)
@@ -14,13 +18,9 @@ def create_app(test_config=None) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
 
     app.config.from_mapping(
-        DEBUG=True,
-        SECRET_KEY='dev',
+        DEBUG=os.environ['DEBUG'],
+        SECRET_KEY=os.environ['SECRET_KEY'],
         DATABASE=os.path.join(app.instance_path, 'crawler.sqlite'),
-        CELERY=dict(
-            broker_url='redis://redis:6379/0',
-            result_backend='redis://redis:6379/0'
-        )
     )
 
     # tie celery into flask app context 
@@ -34,7 +34,7 @@ def create_app(test_config=None) -> Flask:
         
     # )
     # celery_global_instance.config_from_envvar('CELERY_CONFIG_MODULE')
-    celery_global_instance.config_from_object(app.config['CELERY'])
+    # celery_global_instance.config_from_object(app.config['CELERY'])
     celery_global_instance.Task =  FlaskTask
     
     
