@@ -14,7 +14,9 @@ services: # list of services to be used
     # chained shell command
     # initialize the database
     # starts the flask server on 0.0.0.0
-    command: sh -c "flask init-db && flask run --host=0.0.0.0 --port=5001 --debug" 
+    command: sh -c "flask init-db && flask run --host=0.0.0.0 --port=5001 --debug"
+    env_file:
+      - .env
     environment:
       - FLASK_APP=crawler
     ports:

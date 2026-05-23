@@ -98,11 +98,17 @@ def scrape_markup_task(url, url_id, website_id):
                     """,
                     alt
                 )
+                title.clear()
+                headings1.clear()
+                headings2.clear()
+                alt.clear()
+                
         except sqlite3.Error as e:
             db.rollback()
             print(f"Exception {e}")
         else:
             db.commit()
+        
             
     return html
 

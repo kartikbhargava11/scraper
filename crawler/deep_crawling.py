@@ -107,6 +107,7 @@ _base_crawler_run_config = CrawlerRunConfig(
 	excluded_selector="#ads, .tracker, _csrf",
 	prefetch=False,
 	stream=False,
+	scan_full_page=True,
 	exclude_external_links=True,
 	process_iframes=False,
 	remove_overlay_elements=True,
@@ -133,7 +134,7 @@ def _get_http_crawl_strategy(browser_config=None):
 
 # (Default): Uses Playwright for browser-based crawling, supporting JavaScript rendering 
 # and complex interactions.
-def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=False):
+def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=True):
 	return AsyncPlaywrightCrawlerStrategy(
 		browser_config=browser_config or _base_browser_config,
 		browser_adapter=browser_adapter or PlaywrightAdapter(),
@@ -280,7 +281,7 @@ async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None,
 	async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
 		result = await crawler.arun(
 			url,
-			config=run_config
+			config=run_config or _base_crawler_run_config
 		)
 		if result.success:
 			print(f"result.success: {result.success}")
@@ -295,75 +296,78 @@ async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None,
 async def _scrape_content(url):
 	global html
 	# 1st pass try HTTP crawler strategy
-	http_crawler_config = _get_http_crawl_strategy()
+	# http_crawler_config = _get_http_crawl_strategy()
 
-	await _run_crawler_to_scrape_html(url, crawler_strategy=http_crawler_config)
+	# await _run_crawler_to_scrape_html(url, crawler_strategy=http_crawler_config)
 
 
-	# 2nd pass try using stealth mode
+	# # 2nd pass try using stealth mode
+	# if not html:
+	stealth_browser_config = _base_browser_config.clone(
+		text_mode=True,
+		enable_stealth=True,
+	)
+
+	print("STEALTH MODE ON...........")
+
+	stealth_run_config = _base_crawler_run_config.clone(
+		js_code=human_behavior_script_one,
+		wait_until="networkidle",
+		magic=True,
+		override_navigator=True,
+		simulate_user=True,
+		delay_before_return_html=3.0,  # Additional delay
+		max_retries=1,
+		proxy_config=[
+		ProxyConfig.DIRECT,
+			ProxyConfig(
+				server="http://81.92.195.85:8800",
+				username=os.environ['PROXY_USERNAME'],
+				password=os.environ['PROXY_PASSWORD']	
+			),
+		],
+	)
+
+	stealth_crawler_strategy = _get_playwright_crawl_strategy(browser_config=stealth_browser_config)
+
+	await _run_crawler_to_scrape_html(url, crawler_strategy=stealth_crawler_strategy, run_config=stealth_run_config, browser_config=stealth_browser_config)
+
+
+	# 3rd pass try using undetected stealth mode
 	if not html:
-		stealth_browser_config = _base_browser_config.clone(
+		undetected_browser_config = _base_browser_config.clone(
 			text_mode=False,
 			enable_stealth=True,
+			headless=False,
+			viewport_width=1920,
+			viewport_height=1080,
 		)
 
-		stealth_run_config = _base_crawler_run_config.clone(
-			js_code=human_behavior_script_one,
+		undetected_run_config = _base_crawler_run_config.clone(
+			js_code=human_behavior_script_two,
 			wait_until="networkidle",
 			magic=True,
-			simulate_user=True,
 			only_text=False,
-			delay_before_return_html=3.0,  # Additional delay
+			simulate_user=True,
+			override_navigator=True,
+			delay_before_return_html=5.0,  # Additional delay
 			max_retries=1,
 			proxy_config=[
 			ProxyConfig.DIRECT,
 				ProxyConfig(
-					server="http://81.92.195.85:8800",
+					server="http://81.92.195.133:8800",
 					username=os.environ['PROXY_USERNAME'],
-					password=os.environ['PROXY_PASSWORD']	
+					password=os.environ['PROXY_PASSWORD']
 				),
 			],
 		)
 
-		stealth_crawler_strategy = _get_playwright_crawl_strategy(browser_config=stealth_browser_config)
+		undetected_crawler_strategy = _get_playwright_crawl_strategy(
+			browser_config=undetected_browser_config,
+			browser_adapter=UndetectedAdapter()
+		)
 
-		await _run_crawler_to_scrape_html(url, crawler_strategy=stealth_crawler_strategy, run_config=stealth_run_config, browser_config=stealth_browser_config)
-
-
-		# 3rd pass try using undetected stealth mode
-		if not html:
-			undetected_browser_config = _base_browser_config.clone(
-				text_mode=False,
-				enable_stealth=True,
-				headless=False,
-				viewport_width=1920,
-    			viewport_height=1080,
-			)
-
-			undetected_run_config = _base_crawler_run_config.clone(
-				js_code=human_behavior_script_two,
-				wait_until="networkidle",
-				magic=True,
-				only_text=False,
-				simulate_user=True,
-				delay_before_return_html=5.0,  # Additional delay
-				max_retries=1,
-				proxy_config=[
-				ProxyConfig.DIRECT,
-					ProxyConfig(
-						server="http://81.92.195.133:8800",
-						username=os.environ['PROXY_USERNAME'],
-						password=os.environ['PROXY_PASSWORD']
-					),
-				],
-			)
-
-			undetected_crawler_strategy = _get_playwright_crawl_strategy(
-				browser_config=undetected_browser_config,
-				browser_adapter=UndetectedAdapter()
-			)
-
-			await _run_crawler_to_scrape_html(url, crawler_strategy=undetected_crawler_strategy, run_config=undetected_run_config, browser_config=undetected_browser_config)
+		await _run_crawler_to_scrape_html(url, crawler_strategy=undetected_crawler_strategy, run_config=undetected_run_config, browser_config=undetected_browser_config)
 	return html
 
 if __name__ == "__main__":

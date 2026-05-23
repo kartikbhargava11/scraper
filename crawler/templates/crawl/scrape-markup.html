@@ -58,13 +58,16 @@
     <div class="col-12">
       <div class="row">
         <div class="col-12">
-          <h3 class="fs-6 fw-bold">H2 TAG</h3>
+          <h3 class="fs-6 fw-bold">H2 TAG ({{h2 | length}} Found)</h3>
         </div>
         {% for i in range(h2 | length) %}
           <div class="col-lg-4 col-md-6">
             <div class="card rounded-0 h-100">
               <div class="card-body">
-                <h5 class="card-title fw-bold fs-6">{{i + 1}}. <span class="fw-light">{{h2[i]['h2']}}</span></h5>
+                <div class="d-flex flex-column gap-2">
+                  <div class="fw-bold fs-5">{{i + 1}}</div>
+                  <h5 class="card-title fw-light fs-6">{{h2[i]['h2']}}></h5>
+                </div>
               </div>
             </div>
           </div>
@@ -74,7 +77,7 @@
     <div class="col-12">
       <div class="row">
         <div class="col-12">
-          <h3 class="fs-6 fw-bold">ALT TAGS ({{ missing_alt | length }} /{{ alt | length }})</h3>
+          <h3 class="fs-6 fw-bold">ALT TAGS ({{ missing_alt['cnt'] }} Missing)</h3>
         </div>
         {% for i in range(alt | length) %}
           <div class="col-lg-4 col-md-6">
