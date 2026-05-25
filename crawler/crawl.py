@@ -154,7 +154,14 @@ def view_scraped_content(url_id, markup_id):
         """, (url_id,)
     ).fetchone()
 
-    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt)
+    html = db.execute(
+        """
+        SELECT html FROM markup
+        WHERE url_id = ?;
+        """, (url_id,)
+    ).fetchone()
+
+    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, html=html)
 
 @bp.route('/scrape-markup-bulk', methods=('GET',))
 @login_required

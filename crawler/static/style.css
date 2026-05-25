@@ -1,5 +1,15 @@
-section .container {
-    background-color: #FBF6F6;
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+main .container {
+    background-color: #F7F7F7;
 }
 
 .external a {
