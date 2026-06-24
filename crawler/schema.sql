@@ -6,8 +6,7 @@ DROP TABLE IF EXISTS title_tag;
 DROP TABLE IF EXISTS h1_tag;
 DROP TABLE IF EXISTS h2_tag;
 DROP TABLE IF EXISTS img_alt_tag;
-DROP TABLE IF EXISTS status_type;
-DROP TABLE IF EXISTS check_status;
+DROP TABLE IF EXISTS crawl_job;
 
 CREATE TABLE user (
     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15,30 +14,41 @@ CREATE TABLE user (
     password TEXT NOT NULL
 );
 
+-- Rule: Flask creates a job, Celery executes that job. Celery updates that job.
+CREATE TABLE crawl_job (
+    job_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT,
+    job_type TEXT NOT NULL,
+    job_status TEXT NOT NULL DEFAULT 'PENDING',
+    error_message TEXT,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP
+);
+
 
 CREATE TABLE website (
     website_id INTEGER PRIMARY KEY AUTOINCREMENT,
     website_url TEXT NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    job_id INTEGER NOT NULL UNIQUE,
+    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE
 );
 
 CREATE TABLE internal_url (
     url_id INTEGER PRIMARY KEY AUTOINCREMENT,
     url_address TEXT NOT NULL,
-    depth INTEGER NOT NULL,
-    website_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (website_id) REFERENCES website (website_id) ON DELETE CASCADE
+    depth INTEGER DEFAULT NULL,
+    job_id INTEGER NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE
 );
 
 CREATE TABLE markup (
     markup_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    html TEXT NOT NULL,
+    html TEXT,
     url_id INTEGER NOT NULL,
-    website_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (url_id) REFERENCES internal_url (url_id)
-    FOREIGN KEY (website_id) REFERENCES internal_url (website_id) ON DELETE CASCADE
+    job_id INTEGER NOT NULL,
+    FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
+    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE
 );
 
 CREATE TABLE title_tag (
@@ -75,31 +85,6 @@ CREATE TABLE img_alt_tag (
 );
 
 
-CREATE TABLE status_type (
-    status_type_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL
-);
-
-INSERT INTO status_type (name)
-VALUES ('PENDING'),
-    ('COMPLETED'),
-    ('FAILURE'),
-    ('SUCCESS'),
-    ('STARTED');
-
-CREATE TABLE check_status (
-    status_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    status_type_id INTEGER NOT NULL,
-    website_id INTEGER NULL,
-    url_id INTEGER NULL,
-    task_id INTEGER NOT NULL,
-    FOREIGN KEY (status_type_id) REFERENCES status_type(status_type_id),
-    FOREIGN KEY (website_id) REFERENCES website(website_id) ON DELETE CASCADE,
-    FOREIGN KEY (url_id) REFERENCES internal_url(url_id),
-
-    -- it ensures a row always belong to either website_id or url_id
-    CHECK (website_id IS NOT NULL OR url_id IS NOT NULL)
-);
 
 
 

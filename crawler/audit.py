@@ -21,6 +21,8 @@ HEADERS = { # browser identity
 	'Content-Type': 'text/html'
 }
 
+_exponential_back_off = (30, 60, 80)
+
 def load_proxies_from_env() -> List[Dict]:
 	"Load proxies from .env"
 	proxies = []
@@ -128,17 +130,16 @@ _base_crawler_run_config = CrawlerRunConfig(
 		longitude=4.89517,
 		accuracy=25.0
 	),
+	override_navigator=True,
 	wait_until="networkidle",
 	cache_mode=CacheMode.BYPASS,
 	excluded_selector="#ads, .tracker, _csrf",
 	stream=True,
-	exclude_external_links=True,
 	process_iframes=False,
 	remove_overlay_elements=True,
-	exclude_all_images=True,
 	page_timeout=20000,
 	delay_before_return_html="2.0",
-	proxy_rotation_strategy=proxy_rotation_batch()
+	# proxy_rotation_strategy=proxy_rotation_batch()
 )
 
 # MemoryAdaptiveDispatcher dynamically adjusts concurrency based on available system memory and 
@@ -202,7 +203,12 @@ def _extract_failed_pages(result, mode):
 	else:
 		print(f"Misc Failing Case StatusCode={result.status_code} ErrorMessage={result.error_message}")
 
-	failed_urls.append(result.url)
+	failed_urls.append((
+		result.url, # final crawled url after any redirects
+		result.status_code, # status code of first response in the redirect chain
+		result.redirected_status_code, # status code of the final redirected destination
+		result.error_message, # a textual description of the failure
+	))
 	return result.status_code, result.url
 
 success_urls = []
@@ -246,14 +252,10 @@ async def _run_crawler_batch(urls, mode=None, browser_config=None, run_config=No
 		
 		return page
 
-	
-
 	# Create crawler instance
 	crawler = AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config)
 
 	crawler.crawler_strategy.set_hook("before_return_html", before_return_html)
-
-
 	try:
 		await crawler.start()
 		async for result in await crawler.arun_many(
@@ -261,12 +263,10 @@ async def _run_crawler_batch(urls, mode=None, browser_config=None, run_config=No
 			config=run_config or _base_crawler_run_config,
 			dispatcher=dispatcher or _base_memory_adaptive_dispatcher()
 		):
-			print(f"FinalCrawledURL={result.url}, Success={result.success}, FirstStatusCode={result.status_code} (Expected: 200 or 301), RedirectedStatusCode={result.redirected_status_code} (Expected: Empty or 200)")
-
 			if not result.success:
-				_extract_failed_pages(result, mode)
+				await _extract_failed_pages(result, mode)
 			else:
-				valid_pass, status_code = await _extract_succeed_pages(result, mode)
+				await _extract_succeed_pages(result, mode)
 
 	except Exception as e:
 		print("EXCEPTION")
@@ -277,7 +277,7 @@ async def _run_crawler_batch(urls, mode=None, browser_config=None, run_config=No
 
 
 async def _try_stealth(urls):
-	mode = "stealth-session"
+	mode = "stealth"
 	
 	stealth_run_config = _base_crawler_run_config.clone(
 		js_code=human_behavior_script_one,
@@ -306,7 +306,7 @@ async def _try_stealth(urls):
 
 
 async def _try_undetected_and_stealth(urls):
-	mode = "undetected-stealth-session"
+	mode = "undetected-stealth"
 
 	undetected_browser_config = _base_browser_config.clone(
 		headless=True,

@@ -1,10 +1,14 @@
+import os
 import re
 from functools import partial
 from flask import flash
-from crawler.db import get_db
+from dotenv import load_dotenv
+import requests
 
+# importing functions that handle crawling
+from crawler.deep_crawling import _get_links_using_bfs, _scrape_content
 
-from crawler.task import scrape_links_task, scrape_markup_task
+load_dotenv()
 
 # Helper function to check the validity of the URL, using regular expression
 def is_valid_url(url):
@@ -27,73 +31,81 @@ def is_valid_range(num, max=5):
     return None
 
 
-def initiate_task(url, mode, **kwargs):
-    # variable to use later to show error prompts
-    error = None
-    task = None
-    # get the global sqlite database instance from db.py
-    # global instance is saved in flask's global object
-    db = get_db()
-    url_id = kwargs.get('url_id', None)
-    website_id = kwargs.get('website_id', None)
 
-    try:
-        if mode == 'scrape_markup_task':
-            task = scrape_markup_task.delay(url, url_id, website_id)
-        elif mode == 'scrape_links_task':
-            task = scrape_links_task.delay(url)
-            # use the passed URL to extract its primary key from the database
-            website_id = db.execute(
-                'SELECT website_id FROM website WHERE website_url = ?', (url, )
-            ).fetchone()
+async def bfs(url):
+    # function returns all the internal links & their depth in the given URL 
+    dedup_links = await _get_links_using_bfs(url)
 
-            # if the primary key of the URL has not been found. it means, it was a new URL
-            if website_id is None:
+    return dedup_links
 
-                # save the new url to the database using INSERT sql query
-                cur = db.execute(
-                    "INSERT INTO website (website_url) VALUES (?)",
-                    (url,),
-                )
-                # extract the newly saved ID using lastrowid [smart]
-                website_id = cur.lastrowid
-            else:
-                # if the primary key of the URL has been found
-                print("Seen URL, Fetched it from the database")
-                # extract the website id from the tuple extracted from the database
-                website_id = website_id['website_id'] # extracting value from index 0 ex: (4,)
+async def scrape_html(url):
+    # function returns the scraped HTML markup
+    html = await _scrape_content(url)
 
+    return html
 
-        # extract the status_type_id of the 'PENDING' status to use it in saving the status of the newly added celery task in the database
-        status_type_id = db.execute(
-            'SELECT status_type_id FROM status_type WHERE name = ?', ('PENDING', )
-        ).fetchone()
+def call_firecrawl_map(url):
+    payload = {
+        "url": url,
+        "sitemap": "skip",
+        "includeSubdomains": True,
+        "ignoreQueryParameters": True,
+        "ignoreCache": True,
+        "limit": 5000,
+        "location": {
+            "country": os.environ.get('COUNTRY', 'US'),
+            "languages": ["en-US"]
+        },
+        "timeout": int(os.environ.get('TIMEOUT', "6000"))
+    }
+    print(payload)
 
-        # a check to make sure a valid status_type_id is retrived
-        if status_type_id:
-            # save the status of the new task as 'PENDING' in the database
-            if url_id:
-                # if url_id is present, save it too
-                db.execute(
-                    "INSERT INTO check_status (status_type_id, website_id, task_id, url_id) VALUES (?,?,?,?)",
-                    (status_type_id['status_type_id'], website_id, task.id, url_id)
-                )
-            else:
-                # if url_id is not present, it ok for fresh websites (as they don't have internal_urls in the beginning)
-                db.execute(
-                    "INSERT INTO check_status (status_type_id, website_id, task_id) VALUES (?,?,?)",
-                    (status_type_id['status_type_id'], website_id, task.id)
-                )
-        else:
-            db.rollback()
-            raise db.Error
-    # in the case of integrity exception, stop the processing
-    except (db.DatabaseError, db.Error, db.IntegrityError):
-        error = "Database Error"
-    else:
-        # no exceptions raised
-        db.commit()
-    return error
+    headers = {
+        "Authorization": f"Bearer {os.environ['FIRECRAWL_API']}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(
+        os.environ['FIRECRAWL_MAP_API'],
+        json=payload,
+        headers=headers,
+        timeout=70
+    )
+    # Throws an HTTPError if the status code is 4xx or 5xx
+    response.raise_for_status()
+    
+    data = response.json()
+
+    if not data.get("success"):
+        raise RuntimeError(data)
+    
+    return data.get("links", [])
+
+def create_website(db, url, job_id):
+    cur = db.execute(
+        'INSERT INTO website (website_url, job_id) VALUES (?, ?)',
+        (url, job_id)
+    )
+
+    return cur.lastrowid
+
+def create_markup(db, url_id, job_id):
+    cur = db.execute(
+        'INSERT INTO markup (url_id, job_id) VALUES (?, ?)',
+        (url_id, job_id)
+    )
+
+    return cur.lastrowid
+
+def create_crawl_job(db, job_type):
+    cur = db.execute(
+        """
+        INSERT INTO crawl_job (job_type, job_status)
+        VALUES (?,?)
+        """,
+        (job_type, 'PENDING')
+    )
+    return cur.lastrowid
 
 
 _flash_success_alert = partial(flash, category='success')
@@ -102,3 +114,50 @@ _flash_info_alert = partial(flash, category='info')
 
 _flash_error_alert = partial(flash, category='error')
 
+
+class UrlError(Exception):
+    pass
+
+class MaxDepthError(Exception):
+    pass
+
+class MaxPagesError(Exception):
+    pass
+
+def data_sanity_checks(url='', max_pages=10, max_depth=5):
+    error = None
+    # simple data sanity checks before moving forward
+    try:  
+        # verify the format of the url before sending it to crawl4ai
+        valid_url = url.strip() if is_valid_url(url) else None
+
+        if not valid_url:
+            raise UrlError
+
+        # performing type conversion
+        # by default strings are passed
+        raw_max_pages = int(max_pages)
+        raw_max_depth = int(max_depth)
+
+        # check for the valid range of max_pages and max_depth
+        valid_max_pages = is_valid_range(raw_max_pages, max=100)
+        valid_max_depth = is_valid_range(raw_max_depth)
+
+        if not valid_max_depth:
+            raise MaxDepthError
+        elif not valid_max_pages:
+            raise MaxPagesError
+
+    except (ValueError, TypeError):
+        # couldn't convert the input to an integer
+        error = "Max Pages & Max Depth should only be numbers"
+    except MaxPagesError:
+        error = "Max Pages should be a number between [1,100]"
+    except MaxDepthError:
+        error = "Max Depth should be a number between [1,5]"
+    except UrlError:
+        error = f"Url {url} is invalid"
+    except Exception:
+        error = "Misc Error"
+    
+    return error
