@@ -77,7 +77,7 @@ def get_scraped_links(job_id):
     db = get_db()
     rows = db.execute(
         """
-        SELECT j.job_id, j.task_id, j.job_type, j.job_status, j.error_message, j.created, j.started_at, j.finished_at, m.markup_id, m.html, i.url_id, i.url_address, m.job_id AS markup_job_id, i.depth
+        SELECT j.job_id, j.task_id, j.job_type, j.job_status, j.error_message, j.created, j.started_at, j.finished_at, m.markup_id, m.html, i.url_id, i.url_address, m.job_id AS markup_job_id, i.depth, (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) AS diff_seconds
         FROM crawl_job j
         INNER JOIN internal_url i ON i.job_id = j.job_id
         LEFT JOIN markup m ON m.url_id = i.url_id
@@ -108,7 +108,7 @@ def scrape_markup():
 
         job_id = h.create_crawl_job(
             db=db,
-            job_type='scrape-markup'
+            job_type='SCRAPE_MARKUP'
         )
 
         markup_id = h.create_markup(
@@ -144,7 +144,7 @@ def view_scraped_content(job_id):
 
     row = db.execute(
         """
-        SELECT url_id
+        SELECT *
         FROM markup
         WHERE job_id = ?
         """, (job_id,)
@@ -153,6 +153,9 @@ def view_scraped_content(job_id):
     if not row:
         h._flash_error_alert("Page Not Found. 404")
         return render_template('not-found.html')
+
+    if row['crawling_error_message']:
+        return render_template('crawl/scrape-markup.html', row=row)
 
     titles = db.execute(
         """
@@ -189,14 +192,7 @@ def view_scraped_content(job_id):
         """, (row['url_id'],)
     ).fetchone()
 
-    html = db.execute(
-        """
-        SELECT html FROM markup
-        WHERE url_id = ?;
-        """, (row['url_id'],)
-    ).fetchone()
-
-    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, html=html)
+    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, row=row)
 
 @bp.route('/scrape-markup-bulk/<website_id>', methods=('GET',))
 @login_required
@@ -225,7 +221,7 @@ def get_status():
     db = get_db()
     rows = db.execute(
         """
-        SELECT *
+        SELECT *, (strftime('%s', finished_at) - strftime('%s', started_at)) AS diff_seconds
         FROM crawl_job
         ORDER BY created DESC
         """

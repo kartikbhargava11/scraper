@@ -33,7 +33,7 @@ def load_proxies_from_env() -> List[Dict]:
 			if not proxy:
 				continue
 			ip, port, username, password = proxy.split(":")
-			proxy.append({
+			proxies.append({
 				"server": f"http://{ip}:{port}",
 				"username": username,
 				"password": password,
@@ -147,12 +147,12 @@ _base_crawler_run_config = CrawlerRunConfig(
 # avoids overwhelming target websites.
 # arun_many() uses MemoryAdaptiveDispatcher by default after 0.5.0
 
-def _get_rate_limiter(base_delay=(2.0, 3.0), max_delay=30, max_retries=2):
+def _get_rate_limiter(base_delay=(3.0, 5.0), max_delay=30, max_retries=1):
 	return RateLimiter(
 		base_delay=base_delay,
 		max_delay=max_delay,
 		max_retries=max_retries,
-		rate_limit_codes=[429, 503, 403]
+		rate_limit_codes=[429, 503, 403, 202]
 	)
 
 def _base_memory_adaptive_dispatcher(
@@ -187,11 +187,12 @@ def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, te
 
 failed_urls = []
 
-def _extract_failed_pages(result, mode):
+async def _extract_failed_pages(result, mode):
 	if result.status_code in (301, 302, 307, 308) and result.redirected_status_code != 200:
 		print(f"Redirected to {result.redirected_url} [Fail]")
 	elif result.status_code == 202:
 		print("URL is still processing, it will be given more time [Fail]")
+		await asyncio.sleep(5)
 	elif result.status_code == 403:
 		print("Page you're tryna find is blocked")
 	elif result.status_code == 404:
@@ -203,12 +204,13 @@ def _extract_failed_pages(result, mode):
 	else:
 		print(f"Misc Failing Case StatusCode={result.status_code} ErrorMessage={result.error_message}")
 
-	failed_urls.append((
-		result.url, # final crawled url after any redirects
-		result.status_code, # status code of first response in the redirect chain
-		result.redirected_status_code, # status code of the final redirected destination
-		result.error_message, # a textual description of the failure
-	))
+	failed_urls.append(result.url)
+	# failed_urls.append((
+	# 	result.url, # final crawled url after any redirects
+	# 	result.status_code, # status code of first response in the redirect chain
+	# 	result.redirected_status_code, # status code of the final redirected destination
+	# 	result.error_message, # a textual description of the failure
+	# ))
 	return result.status_code, result.url
 
 success_urls = []
@@ -222,7 +224,7 @@ async def _extract_succeed_pages(result, mode):
 	elif result.status_code == 202:
 		print("URL is still processing, it will be given more time [Pass]")
 		valid_pass = False
-		asyncio.sleep()
+		await asyncio.sleep(5)
 
 	elif result.status_code in (301, 302, 307, 308) and result.redirected_status_code == 200:
 		print(f"Redirected to {result.redirected_url} [OK]")
@@ -284,15 +286,6 @@ async def _try_stealth(urls):
 		wait_until="load",
 		magic=True,
     	delay_before_return_html=2.0,  # Additional delay
-		max_retries=1,
-		proxy_config=[
-		ProxyConfig.DIRECT,
-			ProxyConfig(
-				server="http://81.92.195.85:8800",
-				username=os.environ['PROXY_USERNAME'],
-				password=os.environ['PROXY_PASSWORD']
-			),
-		],
 	)
 
 	crawler_strategy = _get_playwright_crawl_strategy()
@@ -321,15 +314,15 @@ async def _try_undetected_and_stealth(urls):
 		js_code=human_behavior_script_two,
 		magic=True,
     	delay_before_return_html=4.0,  # Additional delay
-		max_retries=1,
-		proxy_config=[
-		ProxyConfig.DIRECT,
-			ProxyConfig(
-				server="http://81.92.195.133:8800",
-				username=os.environ['PROXY_USERNAME'],
-				password=os.environ['PROXY_PASSWORD']
-			)
-		],
+		# max_retries=1,
+		# proxy_config=[
+		# ProxyConfig.DIRECT,
+		# 	ProxyConfig(
+		# 		server="http://81.92.195.133:8800",
+		# 		username=os.environ['PROXY_USERNAME'],
+		# 		password=os.environ['PROXY_PASSWORD']
+		# 	)
+		# ],
 	)
 	undetected_memory_dispatcher = _base_memory_adaptive_dispatcher(
 		memory_threshold_percent=92.0,
@@ -346,22 +339,45 @@ async def _try_undetected_and_stealth(urls):
 	await _run_crawler_batch(urls, mode=mode, run_config=undetected_run_config, crawler_strategy=crawler_strategy, browser_config=undetected_browser_config, dispatcher=undetected_memory_dispatcher)
 
 
-async def _scrape_html(urls):
+async def _scrape_html_bulk(urls):
+	succeed = {}
+	failed = {}
+	retry = []
 
 	# 1st pass
-	await _try_stealth(urls)
-
-	if len(failed_urls) > 0:
-		print("Retrying Undetected Mode....")
-		await _try_undetected_and_stealth(failed_urls)
+	first_pass = await _try_stealth(urls)
+	for res in first_pass:
+		if res['ok']:
+			pass
+			# succeed[res['url']] = {
+			# 	'html': res['html'],
+			# 	'mode': 'stealth',
+			# 	'status_code': 
+			# }
+		else:
+			pass
+	
+	if failed:
+		retry_pass = await _try_undetected_and_stealth(failed)
+		for res in retry_pass:
+			if res['ok']:
+				succeed.append(res)
+			else:
+				failed.append(res)
 
 	print(f"Success URLs: {len(success_urls)}")
 	print(f"Failed URLs: {len(failed_urls)}")
 
 
 
+if __name__ == "__main__":
+	print("Running...")
+	[
 
-
-
+	]
+	
+	asyncio.run(_scrape_html(url))
+	
+	print("Complete!")
 
     

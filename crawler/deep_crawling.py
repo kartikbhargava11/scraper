@@ -272,11 +272,7 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
 
 
 
-
-html = None
-
 async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None, crawler_strategy=None):
-	global html
 	async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
 		result = await crawler.arun(
 			url,
@@ -285,29 +281,26 @@ async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None,
 		if result.success:
 			print(f"result.success: {result.success}")
 			print(f"result.status_code: {result.status_code}")
-			html = result.cleaned_html
+			return result
 		else:
-			pass
+			return result
 
 		
 
 
 async def _scrape_content(url):
-	global html
 	# 1st pass try HTTP crawler strategy
 	http_crawler_config = _get_http_crawl_strategy()
 
-	await _run_crawler_to_scrape_html(url, crawler_strategy=http_crawler_config)
+	result = await _run_crawler_to_scrape_html(url, crawler_strategy=http_crawler_config)
 
 
 	# # 2nd pass try using stealth mode
-	if not html:
+	if not result.success:
 		stealth_browser_config = _base_browser_config.clone(
 			text_mode=True,
 			enable_stealth=True,
 		)
-
-		print("STEALTH MODE ON...........")
 
 		stealth_run_config = _base_crawler_run_config.clone(
 			js_code=human_behavior_script_one,
@@ -316,28 +309,27 @@ async def _scrape_content(url):
 			override_navigator=True,
 			simulate_user=True,
 			delay_before_return_html=3.0,  # Additional delay
-			max_retries=1,
-			proxy_config=[
-			ProxyConfig.DIRECT,
-				ProxyConfig(
-					server="http://81.92.195.85:8800",
-					username=os.environ['PROXY_USERNAME'],
-					password=os.environ['PROXY_PASSWORD']	
-				),
-			],
+			# max_retries=1,
+			# proxy_config=[
+			# ProxyConfig.DIRECT,
+			# 	ProxyConfig(
+			# 		server="http://81.92.195.85:8800",
+			# 		username=os.environ['PROXY_USERNAME'],
+			# 		password=os.environ['PROXY_PASSWORD']	
+			# 	),
+			# ],
 		)
 
 		stealth_crawler_strategy = _get_playwright_crawl_strategy(browser_config=stealth_browser_config)
 
-		await _run_crawler_to_scrape_html(url, crawler_strategy=stealth_crawler_strategy, run_config=stealth_run_config, browser_config=stealth_browser_config)
+		result = await _run_crawler_to_scrape_html(url, crawler_strategy=stealth_crawler_strategy, run_config=stealth_run_config, browser_config=stealth_browser_config)
 
 
 		# 3rd pass try using undetected stealth mode
-		if not html:
+		if not result.success:
 			undetected_browser_config = _base_browser_config.clone(
-				text_mode=False,
+				text_mode=True,
 				enable_stealth=True,
-				headless=False,
 				viewport_width=1920,
 				viewport_height=1080,
 			)
@@ -346,19 +338,10 @@ async def _scrape_content(url):
 				js_code=human_behavior_script_two,
 				wait_until="networkidle",
 				magic=True,
-				only_text=False,
+				only_text=True,
 				simulate_user=True,
 				override_navigator=True,
 				delay_before_return_html=5.0,  # Additional delay
-				max_retries=1,
-				proxy_config=[
-				ProxyConfig.DIRECT,
-					ProxyConfig(
-						server="http://81.92.195.133:8800",
-						username=os.environ['PROXY_USERNAME'],
-						password=os.environ['PROXY_PASSWORD']
-					),
-				],
 			)
 
 			undetected_crawler_strategy = _get_playwright_crawl_strategy(
@@ -366,8 +349,15 @@ async def _scrape_content(url):
 				browser_adapter=UndetectedAdapter()
 			)
 
-			await _run_crawler_to_scrape_html(url, crawler_strategy=undetected_crawler_strategy, run_config=undetected_run_config, browser_config=undetected_browser_config)
-	return html
+			result = await _run_crawler_to_scrape_html(url, crawler_strategy=undetected_crawler_strategy, run_config=undetected_run_config, browser_config=undetected_browser_config)
+	return {
+		"html": result.cleaned_html if result.success else None,
+		"status_code": result.status_code,
+		"final_crawled_url": result.url,
+		"redirected_status_code": result.redirected_status_code,
+		"crawling_error_message": result.error_message,
+		"success": result.success
+	}
 
 if __name__ == "__main__":
 	print("Running...")

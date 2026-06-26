@@ -116,13 +116,55 @@ _flash_error_alert = partial(flash, category='error')
 
 
 class UrlError(Exception):
-    pass
+    def __init__(self, log_message='Invalid URL'):
+        super().__init__(log_message) # passing the log message to base Exception class
+        self.log_message = log_message
 
 class MaxDepthError(Exception):
-    pass
+    def __init__(self, log_message='Max Depth should be a number between [1,5]'):
+        super().__init__(log_message) # passing the log message to base Exception class
+        self.log_message = log_message
 
 class MaxPagesError(Exception):
-    pass
+    def __init__(self, log_message='Max Pages should be a number between [1,100]'):
+        super().__init__(log_message) # passing the log message to base Exception class
+        self.log_message = log_message
+
+class CRAWL_FAILED(Exception):
+    def __init__(self, error_code='CRAWLING_FAILURE', log_message='Crawling pipeline failure'):
+        super().__init__(log_message) # passing the log message to base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
+class NO_HTML(Exception):
+    def __init__(self, error_code='NO_HTML_FAILURE', log_message='Crawler returned no/empty HTML'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
+class HTML_404(Exception):
+    def __init__(self, error_code='404_FAILURE', log_message='Page is not found'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
+class ANTI_BOT_403(Exception):
+    def __init__(self, error_code='403_FAILURE', log_message='Page seems blocked'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
+class ERROR_CODE_202(Exception):
+    def __init__(self, error_code='202_FAILURE', log_message='Incomplete request'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
+class ERROR_CODE_429(Exception):
+    def __init__(self, error_code='429_FAILURE', log_message='Overwhelmed server'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
 
 def data_sanity_checks(url='', max_pages=10, max_depth=5):
     error = None
@@ -148,15 +190,13 @@ def data_sanity_checks(url='', max_pages=10, max_depth=5):
         elif not valid_max_pages:
             raise MaxPagesError
 
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
         # couldn't convert the input to an integer
         error = "Max Pages & Max Depth should only be numbers"
-    except MaxPagesError:
-        error = "Max Pages should be a number between [1,100]"
-    except MaxDepthError:
-        error = "Max Depth should be a number between [1,5]"
-    except UrlError:
-        error = f"Url {url} is invalid"
+    except (MaxPagesError, MaxDepthError) as e:
+        error = e.log_message
+    except UrlError as e:
+        error = f"{e.log_message}: {url}"
     except Exception:
         error = "Misc Error"
     

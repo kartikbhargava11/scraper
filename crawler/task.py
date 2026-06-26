@@ -1,11 +1,9 @@
 import asyncio
-import sqlite3
-
 from bs4 import BeautifulSoup
 
 from crawler import celery_global_instance
 from crawler.db import get_db
-from crawler.helper import call_firecrawl_map, scrape_html, bfs
+from crawler.helper import call_firecrawl_map, scrape_html, bfs, CRAWL_FAILED, NO_HTML
 
 
 @celery_global_instance.task(bind=True, ignore_result=False)
@@ -40,7 +38,7 @@ def scrape_markup_task(self, job_id):
         db.commit()
 
         try:
-            html = asyncio.run(scrape_html(job['url_address']))
+            result = asyncio.run(scrape_html(job['url_address']))
             
             # try:
             #     # Check if an event loop is already assigned to this worker thread
@@ -53,7 +51,31 @@ def scrape_markup_task(self, job_id):
             # # Run your async function to completion inside the safe loop
             # html = loop.run_until_complete(scrape_html(job['url_address']))
 
-            soup = BeautifulSoup(html, 'html.parser')
+            db.execute(
+                """
+                UPDATE markup
+                SET html = ?,
+                status_code = ?,
+                final_crawled_url = ?,
+                redirected_status_code = ?,
+                crawling_error_message = ?
+                WHERE job_id = ?
+                """,
+                (
+                    result['html'],
+                    result['status_code'],
+                    result['final_crawled_url'],
+                    result['redirected_status_code'],
+                    result['crawling_error_message'],
+                    job_id
+                )
+            )
+            db.commit()
+            
+            if not result['html']:
+                raise NO_HTML
+
+            soup = BeautifulSoup(result['html'], 'html.parser')
 
             title = []
             headings1 = []
@@ -117,10 +139,21 @@ def scrape_markup_task(self, job_id):
                 ("SUCCESS", job_id)
             )
             db.commit()
+        except (CRAWL_FAILED, NO_HTML) as e:
+            db.execute(
+                """
+                UPDATE crawl_job
+                SET job_status = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
+                WHERE job_id = ?
+                """,
+                (e.error_code, e.log_message, job_id)
+            )
+            db.commit()
+            raise # re-raise the original error so celery also knows the task failed
 
         except Exception as e:
-            db.rollback()
-            db.execute(
+            db.rollback() # rollback partial DB work
+            db.execute( # make crawl_job as Failure
                 """
                 UPDATE crawl_job
                 SET job_status = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
@@ -128,8 +161,8 @@ def scrape_markup_task(self, job_id):
                 """,
                 ("FAILURE", str(e), job_id)
             )
-            db.commit()
-            raise
+            db.commit() # save the error_message
+            raise # re-raise the original error so celery also knows the task failed
 
 
 

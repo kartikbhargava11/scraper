@@ -1,4 +1,6 @@
 import os
+from zoneinfo import ZoneInfo
+from datetime import timezone
 from dotenv import load_dotenv
 
 from flask import Flask
@@ -18,9 +20,11 @@ def create_app(test_config=None) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
 
     app.config.from_mapping(
-        DEBUG=os.environ['DEBUG'],
-        SECRET_KEY=os.environ['SECRET_KEY'],
+        DEBUG=os.environ.get('DEBUG', False),
+        SECRET_KEY=os.environ.get('SECRET_KEY', 'local-secret-key-for-flask-backend'),
         DATABASE=os.path.join(app.instance_path, 'crawler.sqlite'),
+        TIMEZONE=os.environ.get('TIMEZONE', 'Asia/Kolkata'),
+        DATETIME_FORMAT="%d %b %Y, %-I:%M %p"
     )
 
     # tie celery into flask app context 
@@ -50,6 +54,15 @@ def create_app(test_config=None) -> Flask:
     def hello():
         return 'Health Check [OK]'
     
+    @app.template_filter('local_datetime')
+    def local_datetime(value):
+        if value is None:
+            return ''
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        local_value = value.astimezone(ZoneInfo(app.config['TIMEZONE']))
+        return local_value.strftime(app.config['DATETIME_FORMAT'])
+    
     from . import db
     db.init_app(app)
 
@@ -66,3 +79,7 @@ def create_app(test_config=None) -> Flask:
 
     
     return app
+
+
+
+    

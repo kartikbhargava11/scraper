@@ -47,6 +47,10 @@ CREATE TABLE markup (
     html TEXT,
     url_id INTEGER NOT NULL,
     job_id INTEGER NOT NULL,
+    status_code INTEGER,
+    final_crawled_url TEXT,
+    redirected_status_code INTEGER,
+    crawling_error_message TEXT,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE
 );
@@ -55,7 +59,6 @@ CREATE TABLE title_tag (
     title_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     url_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE
 );
 
@@ -63,7 +66,6 @@ CREATE TABLE h1_tag (
     h1_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
     h1 TEXT NOT NULL,
     url_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE
 );
 
@@ -71,7 +73,6 @@ CREATE TABLE h2_tag (
     h2_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
     h2 TEXT NOT NULL,
     url_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE
 );
 
@@ -80,7 +81,6 @@ CREATE TABLE img_alt_tag (
     alt_text TEXT DEFAULT NULL,
     img_tag TEXT NOT NULL,
     url_id INTEGER NOT NULL,
-    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id) ON DELETE CASCADE
 );
 
