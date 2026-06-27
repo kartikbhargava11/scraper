@@ -1,14 +1,57 @@
 import os
 import re
+
+import requests
 from functools import partial
 from flask import flash
 from dotenv import load_dotenv
-import requests
+from bs4 import BeautifulSoup
+
 
 # importing functions that handle crawling
 from crawler.deep_crawling import _get_links_using_bfs, _scrape_content
+from crawler.audit import _scrape_html_bulk
 
 load_dotenv()
+
+
+def mark_crawl_job_started(db, task_id, job_id):
+    status = os.environ.get('CODE_STARTED', 'STARTED')
+    db.execute(
+        """
+        UPDATE crawl_job
+        SET job_status = ?, task_id = ?, started_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?
+        """,
+        (status, task_id, job_id)
+    )
+    db.commit()
+
+
+def mark_crawl_job_success(db, job_id):
+    status = os.environ.get('CODE_SUCCESS', 'SUCCESS')
+    db.execute(
+        """
+        UPDATE crawl_job
+        SET job_status = ?, finished_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?
+        """,
+        (status, job_id)
+    )
+    db.commit()
+
+def mark_crawl_job_failure(db, error_message, job_id):
+    status = os.environ.get('CODE_FAILURE', 'FAILURE')
+    db.execute(
+    """
+    UPDATE crawl_job
+    SET job_status = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
+    WHERE job_id = ?
+    """,
+    (status, error_message, job_id)
+    )
+    db.commit()
+
 
 # Helper function to check the validity of the URL, using regular expression
 def is_valid_url(url):
@@ -30,6 +73,8 @@ def is_valid_range(num, max=5):
         return num
     return None
 
+async def crawl_bulk(urls):
+    return await _scrape_html_bulk(urls)
 
 
 async def bfs(url):
@@ -40,9 +85,7 @@ async def bfs(url):
 
 async def scrape_html(url):
     # function returns the scraped HTML markup
-    html = await _scrape_content(url)
-
-    return html
+    return await _scrape_content(url)
 
 def call_firecrawl_map(url):
     payload = {
@@ -58,15 +101,16 @@ def call_firecrawl_map(url):
         },
         "timeout": int(os.environ.get('TIMEOUT', "6000"))
     }
-    print(payload)
+    if 'FIRECRAWL_TOKEN' not in os.environ:
+        raise ValueError('Missing required environment variable: FIRECRAWL_TOKEN')
 
     headers = {
-        "Authorization": f"Bearer {os.environ['FIRECRAWL_API']}",
+        "Authorization": f"Bearer {os.environ['FIRECRAWL_TOKEN']}",
         "Content-Type": "application/json"
     }
 
     response = requests.post(
-        os.environ['FIRECRAWL_MAP_API'],
+        os.environ.get('FIRECRAWL_MAP_API', 'https://api.firecrawl.dev/v2/map'),
         json=payload,
         headers=headers,
         timeout=70
@@ -108,11 +152,11 @@ def create_crawl_job(db, job_type):
     return cur.lastrowid
 
 
-_flash_success_alert = partial(flash, category='success')
+flash_success_alert = partial(flash, category='success')
 
-_flash_info_alert = partial(flash, category='info')
+flash_info_alert = partial(flash, category='info')
 
-_flash_error_alert = partial(flash, category='error')
+flash_error_alert = partial(flash, category='error')
 
 
 class UrlError(Exception):
@@ -166,6 +210,12 @@ class ERROR_CODE_429(Exception):
         self.error_code = error_code
         self.log_message = log_message
 
+class ERROR_CODE_400(Exception):
+    def __init__(self, error_code='400_BAD_INPUT', log_message='Bad input provided'):
+        super().__init__(log_message) # passing the log message to the base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+
 def data_sanity_checks(url='', max_pages=10, max_depth=5):
     error = None
     # simple data sanity checks before moving forward
@@ -201,3 +251,59 @@ def data_sanity_checks(url='', max_pages=10, max_depth=5):
         error = "Misc Error"
     
     return error
+
+
+def save_html_tags(db, html, url_id):
+    soup = BeautifulSoup(html, 'html.parser')
+
+    title = []
+    headings1 = []
+    headings2 = []
+    alt = []
+
+    for tag in soup.find_all(['title', 'h1', 'h2', 'img']):
+        if tag.name == 'title':
+            title.append((str(tag), url_id))
+        elif tag.name == 'h1':
+            headings1.append((str(tag), url_id))
+        elif tag.name == 'h2':
+            headings2.append((str(tag), url_id))
+        elif tag.name == 'img':
+            if tag.has_attr('alt'):
+                alt.append((tag['alt'], str(tag), url_id))
+            else:
+                alt.append((None, str(tag), url_id))
+    
+    db.executemany(
+        """
+        INSERT INTO title_tag (title, url_id)
+        VALUES (?,?)
+        """,
+        title
+    )
+    db.executemany(
+        """
+        INSERT INTO h1_tag (h1, url_id)
+        VALUES (?,?)
+        """,
+        headings1
+    )
+    db.executemany(
+        """
+        INSERT INTO h2_tag (h2, url_id)
+        VALUES (?,?)
+        """,
+        headings2
+    )
+    db.executemany(
+        """
+        INSERT INTO img_alt_tag (alt_text, img_tag, url_id)
+        VALUES (?,?,?)
+        """,
+        alt
+    )
+
+    title.clear()
+    headings1.clear()
+    headings2.clear()
+    alt.clear()

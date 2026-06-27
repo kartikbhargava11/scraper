@@ -13,13 +13,13 @@
     </form>
   
   
-    <form>
+    <form method="POST" action="{{url_for('crawl.scrape_markup_bulk', job_id=job_id)}}">
       <input type="submit" class="btn btn-success rounded-0" value="Fetch Markups [ALL]">
     </form>
   
 
     <form method="POST" action="{{url_for('crawl.delete_job', job_id=job_id)}}">
-      <input type="submit" class="btn btn-danger rounded-0" value="Delete Links [ALL]">
+      <input type="submit" class="btn btn-danger rounded-0" value="Delete [ALL]">
     </form>
     
   </div>
@@ -54,25 +54,27 @@
           {% endif %}
         </td>
         <td>
-          {% if rows[index]['markup_id'] %}
+          {% if rows[index]['markup_job_id'] %}
           ✅
           {% else %}
           ❌
           {% endif %}
         </td>
         <td>
-          {% if rows[index]['markup_id'] %}
+          {% if rows[index]['markup_job_id'] %}
             <div class="d-grid">
-              <a href="{{ url_for('crawl.view_scraped_content', job_id=rows[index]['markup_job_id']) }}" class="btn btn-success rounded-0">
-                View
-              </a>
-            </div>
+              <form method="POST" action="{{ url_for('crawl.view_scraped_content', job_id=rows[index]['markup_job_id']) }}">
+                <input type="hidden" name="markup-id" value="{{rows[index]['markup_id']}}">
+                <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
+                <input type="submit" class="btn btn-success rounded-0" value="View HTML">
+              </form>
           {% else %}
             <form method="POST" action="{{ url_for('crawl.scrape_markup') }}">
               <input type="hidden" name="url" value="{{rows[index]['url_address']}}">
               <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
               <input type="submit" class="btn btn-outline-primary rounded-0" value="Fetch HTML ⚡️">
             </form>
+            </div>
           {% endif %}
         </td>
       </tr>

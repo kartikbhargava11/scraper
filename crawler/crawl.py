@@ -4,15 +4,14 @@
 # complex crawling and background celery task logic not done here
 
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, url_for, jsonify
+    Blueprint, g, redirect, render_template, request, url_for, jsonify
 )
 from werkzeug.exceptions import abort
 
 from crawler.auth import login_required
 from crawler.db import get_db
-from crawler import celery_global_instance
-import crawler.helper as h
-import crawler.task as t
+from crawler.helper import *
+from crawler.task import *
 
 bp = Blueprint('crawl', __name__, url_prefix="/crawl")
 
@@ -25,29 +24,29 @@ def scrape_links():
         max_depth = request.form['max-depth'].strip()
         job_type = request.form['job-type'].strip()
 
-        error = h.data_sanity_checks(
+        error = data_sanity_checks(
             url=url,
             max_pages=max_pages,
             max_depth=max_depth,
         )
         if error:
-            h._flash_error_alert(error)
+            flash_error_alert(error)
             return render_template('crawl/scrape-links.html')
         
         db = get_db()
 
         try:
-            job_id = h.create_crawl_job(
+            job_id = create_crawl_job(
                 db=db,
                 job_type=job_type
             )
 
-            website_id = h.create_website(db, url, job_id)
+            website_id = create_website(db, url, job_id)
 
 
             db.commit()
 
-            task = t.scrape_links_task.delay(job_id)
+            task = scrape_links_task.delay(job_id)
 
             db.execute(
                 """
@@ -61,10 +60,10 @@ def scrape_links():
             db.commit()
         except Exception as e:
             db.rollback()
-            h._flash_error_alert(str(e))
+            flash_error_alert(str(e))
             return render_template('crawl/scrape-links.html')
         
-        h._flash_info_alert('Processing....')
+        flash_info_alert('Processing....')
         return redirect(url_for('crawl.get_status'))
 
     # return the template for GET request
@@ -95,29 +94,29 @@ def scrape_markup():
  
     # data sanity check
     # verify the format of the url before sending it to crawl4ai
-    error = h.data_sanity_checks(
+    error = data_sanity_checks(
         url=url
     )
 
     if error:
-        h._flash_error_alert(error)
+        flash_error_alert(error)
     
     try:
 
         db = get_db()
 
-        job_id = h.create_crawl_job(
+        job_id = create_crawl_job(
             db=db,
             job_type='SCRAPE_MARKUP'
         )
 
-        markup_id = h.create_markup(
+        markup_id = create_markup(
             db=db,
             url_id=url_id,
             job_id=job_id
         )
 
-        task = t.scrape_markup_task.delay(job_id)
+        task = scrape_markup_task.delay(job_id)
 
         db.execute("""
         UPDATE crawl_job
@@ -129,30 +128,62 @@ def scrape_markup():
         db.commit()
     except Exception as e:
         db.rollback()
-        h._flash_error_alert(str(e))
-
-        return redirect(url_for('crawl.get_status'))
-    
-    h._flash_info_alert('Process in Queue...')
+        flash_error_alert(str(e))
+    else:
+        flash_info_alert('Process in Queue...')
     return redirect(url_for('crawl.get_status'))
-    
 
-@bp.route('/scrape-markup/result/<job_id>', methods=('GET',))
+
+@bp.route('/scrape-markup-bulk/result/<job_id>', methods=('GET',))
+@login_required
+def view_scraped_content_for_bulk_scrape(job_id):
+    db = get_db()
+
+    rows = db.execute(
+        """
+        SELECT *
+        FROM markup m
+        LEFT JOIN internal_url i ON m.url_id = i.url_id
+        WHERE m.job_id = ?
+        """,
+        (job_id,)
+    ).fetchall()
+
+    return render_template('crawl/scrape-markup-bulk.html', rows=rows)
+
+
+@bp.route('/scrape-markup/result/<job_id>', methods=('GET', 'POST'))
 @login_required
 def view_scraped_content(job_id):
     db = get_db()
+    if request.method == 'POST':
+        markup_id = request.form.get('markup-id')
+        url_id = request.form.get('url-id')
+        row = db.execute(
+            """
+            SELECT *
+            FROM markup m
+            INNER JOIN internal_url i ON m.url_id = i.url_id
+            WHERE m.job_id = ? AND m.markup_id = ? AND m.url_id = ?
+            """,
+            (job_id, markup_id, url_id)
+        ).fetchone()
 
-    row = db.execute(
-        """
-        SELECT *
-        FROM markup
-        WHERE job_id = ?
-        """, (job_id,)
-    ).fetchone()
+    else:
+        row = db.execute(
+            """
+            SELECT *
+            FROM markup m
+            INNER JOIN internal_url i ON m.url_id = i.url_id
+            WHERE m.job_id = ?
+            """,
+            (job_id,)
+        ).fetchone()
 
     if not row:
-        h._flash_error_alert("Page Not Found. 404")
+        flash_error_alert("Page Not Found. 404")
         return render_template('not-found.html')
+    
 
     if row['crawling_error_message']:
         return render_template('crawl/scrape-markup.html', row=row)
@@ -194,26 +225,49 @@ def view_scraped_content(job_id):
 
     return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, row=row)
 
-@bp.route('/scrape-markup-bulk/<website_id>', methods=('GET',))
+@bp.route('/scrape-markup-bulk/<job_id>', methods=('POST',))
 @login_required
-def scrape_markup_bulk(website_id):
-    db = get_db()
-    # # 
-    # rows = db.execute("""
-    #     SELECT i.url_id, i.url_address, i.depth, i.website_id, m.markup_id
-    #     FROM internal_url i
-    #     LEFT JOIN markup m ON i.url_id = m.url_id
-    #     WHERE m.markup_id is NULL and i.website_id = ?
-    # """, (website_id,)
-    # ).fetchall()
+def scrape_markup_bulk(job_id):
+    try:
+        # job_id -> will be used to extract all the links from the db
+        db = get_db()
 
-    # df = pd.DataFrame([dict(row) for row in rows])
+        row = db.execute(
+            """
+            SELECT job_id FROM crawl_job
+            WHERE job_id = ?
+            """,
+            (job_id,)
+        ).fetchone()
 
-    # excel_path = os.path.join(os.getcwd(), "static", f"output_.xlsx")
-    # df.to_excel(excel_path, index=False)
+        if not row:
+            flash_error_alert("Page Not Found. 404")
+            return render_template("not-found.html")
+        
+        _job_id = create_crawl_job(
+            db=db,
+            job_type='SCRAPE_MARKUP_BULK'
+        )
 
+        task = scrape_markup_bulk_task.delay(job_id, _job_id)
 
-    return render_template('crawl/scrape-markup-bulk.html')
+        db.execute(
+            """
+            UPDATE crawl_job
+            SET task_id = ?
+            WHERE job_id = ?
+            """,
+            (task.id, _job_id)
+        )
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        flash_error_alert(str(e))
+    else:
+        flash_info_alert('Process in Queue...')
+
+    return redirect(url_for('crawl.get_status'))
 
 @bp.route('/check-status', methods=('GET',))
 @login_required
@@ -238,7 +292,7 @@ def delete_job(job_id):
 
     db.commit()
 
-    h._flash_info_alert("Deleted the results")
+    flash_info_alert("Deleted the results")
 
     return redirect(url_for("crawl.get_status")) 
 

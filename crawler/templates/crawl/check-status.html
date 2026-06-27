@@ -19,7 +19,7 @@
           </div> -->
           <div class="card-body">
             <h5>
-              <span class="badge {{ 'bg-success' if row['job_status'] == 'SUCCESS' else ('bg-warning' if row['job_status'] == 'PENDING' else 'bg-danger') }}">
+              <span class="badge {{ 'bg-success' if row['job_status'] == 'SUCCESS' else ('bg-warning' if row['job_status'] == 'STARTED' or row['job_status'] == 'PENDING' else 'bg-danger') }}">
                 {{row['job_status']}}
               </span>
             </h5>
@@ -90,12 +90,16 @@
           <div class="card-body">
             {% if row['job_status'] == 'SUCCESS' %}
               {% if row['job_type'] == 'SCRAPE_MARKUP' %}
-                <a href="{{url_for('crawl.view_scraped_content', job_id=row['job_id'])}}" class="btn btn-outline-dark rounded-0">View Markup</a>
+                <a href="{{url_for('crawl.view_scraped_content', job_id=row['job_id'] )}}" class="btn btn-outline-dark rounded-0">View Markup</a>
+              {% elif row['job_type'] == 'SCRAPE_MARKUP_BULK' %}
+                <div>
+                  <a href="{{url_for('crawl.view_scraped_content_for_bulk_scrape', job_id=row['job_id'] )}}" class="btn btn-outline-primary">View Markup [BULK]</a>
+                </div>
               {% else %}
                 <a href="{{url_for('crawl.get_scraped_links', job_id=row['job_id'])}}" class="btn btn-dark rounded-0">View Links</a>
               {% endif %}
-            {% elif row['job_status'] == 'PENDING' %}
-              <a aria-expanded="true" class="btn btn-secondary rounded-0">Loading Results....</a>
+            {% elif row['job_status'] == 'PENDING' or row['job_status'] == 'STARTED' %}
+              <a aria-expanded="true" class="btn btn-secondary rounded-0">Processing....</a>
             {% else %}
               <a href="{{url_for('crawl.view_scraped_content', job_id=row['job_id'])}}" class="btn btn-outline-danger rounded-0">Troubleshoot</a>
             {% endif %}

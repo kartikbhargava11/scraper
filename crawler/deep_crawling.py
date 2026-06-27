@@ -103,7 +103,7 @@ _base_crawler_run_config = CrawlerRunConfig(
 		longitude=-118.2437,
 		accuracy=10.0
 	),
-	only_text=True,
+	only_text=False,
 	excluded_selector="#ads, .tracker, _csrf",
 	prefetch=False,
 	stream=False,
@@ -245,15 +245,15 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
 		wait_time=3.0,  # Wait 3 seconds after page load
     	delay_before_return_html=2.0,  # Additional delay
 		stream=True,
-		max_retries=1,
-		proxy_config=[
-			ProxyConfig.DIRECT,
-			ProxyConfig(
-				server="http://81.92.195.133:8800",
-				username=os.environ['PROXY_USERNAME'],
-				password=os.environ['PROXY_PASSWORD']
-			)
-		],
+		# max_retries=1,
+		# proxy_config=[
+		# 	ProxyConfig.DIRECT,
+		# 	ProxyConfig(
+		# 		server="http://81.92.195.133:8800",
+		# 		username=os.environ['PROXY_USERNAME'],
+		# 		password=os.environ['PROXY_PASSWORD']
+		# 	)
+		# ],
 	)
 
 	mode="bfs-regular"
@@ -328,7 +328,7 @@ async def _scrape_content(url):
 		# 3rd pass try using undetected stealth mode
 		if not result.success:
 			undetected_browser_config = _base_browser_config.clone(
-				text_mode=True,
+				text_mode=False,
 				enable_stealth=True,
 				viewport_width=1920,
 				viewport_height=1080,
@@ -338,7 +338,7 @@ async def _scrape_content(url):
 				js_code=human_behavior_script_two,
 				wait_until="networkidle",
 				magic=True,
-				only_text=True,
+				only_text=False,
 				simulate_user=True,
 				override_navigator=True,
 				delay_before_return_html=5.0,  # Additional delay

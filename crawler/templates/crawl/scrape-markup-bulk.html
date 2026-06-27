@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+
+{% block content %}
+  <h1 class="text-center fs-3 font-monospace">{% block title %}Markup Content{% endblock %}</h1>
+  <h2 class="text-center fs-5 fw-light">This service returns the markdown of the entered URL</h2>
+ <div class="row">
+  {% for row in rows %}
+    
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card rounded-0 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title font-monospace text-center">KEY  INDICATORS</h5>
+                <div class="d-flex flex-column gap-2 my-4">
+                <div>Markup ID = {{row['markup_id']}}</div>
+                <div>URL ID = {{row['url_id']}}</div>
+                <div>Original URL Crawled = 
+                    <a href="{{row['url_address']}}">{{row['url_address']}}</a>
+                </div>
+                <div>Final URL Crawled = 
+                    <a href="{{row['final_crawled_url']}}">{{row['final_crawled_url']}}</a>
+                </div>
+                <div class="text-success fw-bold">Status Code = {{row['status_code']}}</div>
+                <div>First Status Code = {{row['redirected_status_code']}}</div>
+                </div>
+            </div>
+            </div>
+        </div>
+    
+  {% endfor %}
+  </div>
+{% endblock %}

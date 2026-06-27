@@ -131,10 +131,10 @@ _base_crawler_run_config = CrawlerRunConfig(
 		accuracy=25.0
 	),
 	override_navigator=True,
-	wait_until="networkidle",
+	wait_until="load",
 	cache_mode=CacheMode.BYPASS,
 	excluded_selector="#ads, .tracker, _csrf",
-	stream=True,
+	stream=False,
 	process_iframes=False,
 	remove_overlay_elements=True,
 	page_timeout=20000,
@@ -185,14 +185,12 @@ def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, te
 		# text_mode=text_mode
 	)
 
-failed_urls = []
-
-async def _extract_failed_pages(result, mode):
+def _extract_failed_pages(result):
 	if result.status_code in (301, 302, 307, 308) and result.redirected_status_code != 200:
 		print(f"Redirected to {result.redirected_url} [Fail]")
 	elif result.status_code == 202:
 		print("URL is still processing, it will be given more time [Fail]")
-		await asyncio.sleep(5)
+		
 	elif result.status_code == 403:
 		print("Page you're tryna find is blocked")
 	elif result.status_code == 404:
@@ -204,48 +202,26 @@ async def _extract_failed_pages(result, mode):
 	else:
 		print(f"Misc Failing Case StatusCode={result.status_code} ErrorMessage={result.error_message}")
 
-	failed_urls.append(result.url)
-	# failed_urls.append((
-	# 	result.url, # final crawled url after any redirects
-	# 	result.status_code, # status code of first response in the redirect chain
-	# 	result.redirected_status_code, # status code of the final redirected destination
-	# 	result.error_message, # a textual description of the failure
-	# ))
-	return result.status_code, result.url
-
-success_urls = []
-
-async def _extract_succeed_pages(result, mode):
-	valid_pass = True
+def _extract_succeed_pages(result):
 
 	if result.status_code == 200 and not result.error_message:
 		print("URL Pass without error message and no redirects")
 
 	elif result.status_code == 202:
 		print("URL is still processing, it will be given more time [Pass]")
-		valid_pass = False
-		await asyncio.sleep(5)
+		
 
 	elif result.status_code in (301, 302, 307, 308) and result.redirected_status_code == 200:
 		print(f"Redirected to {result.redirected_url} [OK]")
 
 	elif result.status_code in (301, 302, 307, 308) and result.redirected_status_code != 200:
 		print(f"Redirected to {result.redirected_url} [Soft Fail]")
-		valid_pass = False
 
 	else:
 		print(f"Misc Passing Case StatusCode={result.status_code}, ErrorMessage={result.error_message}, RedirectCode={result.redirected_status_code}, FinalCrawlerUrl={result.url}")
-		valid_pass = False
-
-	if valid_pass:
-		success_urls.append(result.url)
-	else:
-		failed_urls.append(result.url)
-
-	return valid_pass, result.status_code
 
 
-async def _run_crawler_batch(urls, mode=None, browser_config=None, run_config=None, crawler_strategy=None, dispatcher=None):
+async def _run_crawler_batch(urls, browser_config=None, run_config=None, crawler_strategy=None, dispatcher=None):
 
 	async def before_return_html(page: Page, context: BrowserContext, html: str, **kwargs):
 		"""Hook called before returning the HTML content"""
@@ -260,26 +236,23 @@ async def _run_crawler_batch(urls, mode=None, browser_config=None, run_config=No
 	crawler.crawler_strategy.set_hook("before_return_html", before_return_html)
 	try:
 		await crawler.start()
-		async for result in await crawler.arun_many(
+		results = await crawler.arun_many(
 			urls=urls,
 			config=run_config or _base_crawler_run_config,
 			dispatcher=dispatcher or _base_memory_adaptive_dispatcher()
-		):
-			if not result.success:
-				await _extract_failed_pages(result, mode)
-			else:
-				await _extract_succeed_pages(result, mode)
-
+		)
+		return results
 	except Exception as e:
 		print("EXCEPTION")
 		print(f"{e}")
+		return None
 	finally:
 		await crawler.close()
+		
 
 
 
 async def _try_stealth(urls):
-	mode = "stealth"
 	
 	stealth_run_config = _base_crawler_run_config.clone(
 		js_code=human_behavior_script_one,
@@ -290,19 +263,19 @@ async def _try_stealth(urls):
 
 	crawler_strategy = _get_playwright_crawl_strategy()
 
-	await _run_crawler_batch(
+	return await _run_crawler_batch(
 			urls,
-			mode=mode,
 			run_config=stealth_run_config,
 			crawler_strategy=crawler_strategy
 		)
 
 
 async def _try_undetected_and_stealth(urls):
-	mode = "undetected-stealth"
 
 	undetected_browser_config = _base_browser_config.clone(
 		headless=True,
+		viewport_width=1920,
+		viewport_height=1080,
 	)
 	# create the crawler strategy with undetected adapter
 	crawler_strategy = _get_playwright_crawl_strategy(
@@ -310,19 +283,10 @@ async def _try_undetected_and_stealth(urls):
 	    browser_adapter=UndetectedAdapter()
 	)
 	undetected_run_config = _base_crawler_run_config.clone(
-		wait_until="load",
+		wait_until="networkidle",
 		js_code=human_behavior_script_two,
 		magic=True,
     	delay_before_return_html=4.0,  # Additional delay
-		# max_retries=1,
-		# proxy_config=[
-		# ProxyConfig.DIRECT,
-		# 	ProxyConfig(
-		# 		server="http://81.92.195.133:8800",
-		# 		username=os.environ['PROXY_USERNAME'],
-		# 		password=os.environ['PROXY_PASSWORD']
-		# 	)
-		# ],
 	)
 	undetected_memory_dispatcher = _base_memory_adaptive_dispatcher(
 		memory_threshold_percent=92.0,
@@ -336,48 +300,83 @@ async def _try_undetected_and_stealth(urls):
 		)
 	)
 
-	await _run_crawler_batch(urls, mode=mode, run_config=undetected_run_config, crawler_strategy=crawler_strategy, browser_config=undetected_browser_config, dispatcher=undetected_memory_dispatcher)
+	return await _run_crawler_batch(urls, run_config=undetected_run_config, crawler_strategy=crawler_strategy, browser_config=undetected_browser_config, dispatcher=undetected_memory_dispatcher)
 
 
 async def _scrape_html_bulk(urls):
-	succeed = {}
-	failed = {}
-	retry = []
+	# urls <- list of dic
+	# [
+	#	{url_id: 12, url_address: 'https://google.com'},
+	#	{url_id: 13, url_address: 'https://apple.com'},
+	# ]
 
-	# 1st pass
-	first_pass = await _try_stealth(urls)
-	for res in first_pass:
-		if res['ok']:
-			pass
-			# succeed[res['url']] = {
-			# 	'html': res['html'],
-			# 	'mode': 'stealth',
-			# 	'status_code': 
-			# }
-		else:
-			pass
 	
-	if failed:
-		retry_pass = await _try_undetected_and_stealth(failed)
-		for res in retry_pass:
-			if res['ok']:
-				succeed.append(res)
-			else:
-				failed.append(res)
+	
+	list_of_urls = [url['url_address'] for url in urls]
+	# [
+	#	'https://google.com',
+	#	'https://apple.com',
+	# ]
 
-	print(f"Success URLs: {len(success_urls)}")
-	print(f"Failed URLs: {len(failed_urls)}")
+	results = await _try_stealth(list_of_urls)
+	# [
+	#	CrawlResult,
+	#	CrawlResult,
+	# ]
 
+	response = {}
+
+	retries = []
+	failed_urls = []
+	
+	if results:
+		if len(urls) == len(results): # makes sure correct number of results were returned by the crawler
+			for index in range(len(results)): # using index to map both 'urls' and 'results' together
+				if not results[index].success: # if crawl result fails, add the orginal url into 'retries' list
+					retries.append(urls[index]['url_address'])
+
+					failed_urls.append({
+						'url_id': urls[index]['url_id'],
+						'url_address': urls[index]['url_address']	
+					})
+
+				# save the custom result into a list 'response' to return to Flask app
+				response[urls[index]['url_id']] = {
+					"url_id": urls[index]['url_id'],
+					"original_url": urls[index]['url_address'],
+					"final_crawled_url": results[index].url,
+					"html": results[index].cleaned_html if results[index].success else None,
+					"status_code": results[index].status_code,
+					"redirected_status_code": results[index].redirected_status_code,
+					"crawling_error_message": results[index].error_message,
+					"success": results[index].success,
+					"mode": "STEALTH"
+				}
+
+	if retries:
+		results = await _try_undetected_and_stealth(retries)
+		if results:
+			if len(retries) == len(results):
+				for index in range(len(results)):
+					if failed_urls[index]['url_id'] == response[failed_urls[index]['url_id']]['url_id']:
+						response[failed_urls[index]['url_id']] = {
+							"url_id": failed_urls[index]['url_id'],
+							"original_url": failed_urls[index]['url_address'],
+							"final_crawled_url": results[index].url,
+							"html": results[index].cleaned_html if results[index].success else None,
+							"status_code": results[index].status_code,
+							"redirected_status_code": results[index].redirected_status_code,
+							"crawling_error_message": results[index].error_message,
+							"success": results[index].success,
+							"mode": "UNDETECTED_STEALTH"
+						}
+
+	
+	return response
 
 
 if __name__ == "__main__":
 	print("Running...")
-	[
-
-	]
 	
-	asyncio.run(_scrape_html(url))
-	
-	print("Complete!")
 
     

@@ -14,7 +14,7 @@
           </h5>
           <div class="d-flex flex-column gap-2">
             <div>Markup ID = {{row['markup_id']}}</div>
-            <div>Status Code = {{row['status_code']}}</div>
+            <div class="badge bg-danger">Status Code = {{row['status_code']}}</div>
             <div>Final Crawled URL = {{row['final_crawled_url']}}</div>
             <div>First Status Code = {{row['redirected_status_code']}}</div>
             <div>Error Msg = {{row['crawling_error_message']}}</div>
@@ -30,11 +30,18 @@
         <div class="col-lg-4 offset-lg-4 col-md-6 offset-md-3">
           <div class="card rounded-0 shadow-sm">
             <div class="card-body">
-              <h5 class="card-title text-center font-monospace">META DATA</h5>
-              <div class="d-flex flex-column gap-2">
+              
+              <h5 class="card-title font-monospace text-center">KEY  INDICATORS</h5>
+              <div class="d-flex flex-column gap-2 my-4">
                 <div>Markup ID = {{row['markup_id']}}</div>
-                <div>Status Code = <span class="fw-bold {{ 'text-success' if row['status_code'] == 200 else 'text-dark' }}">{{row['status_code']}}</span></div>
-                <div>Final Crawled URL = {{row['final_crawled_url']}}</div>
+                <div>URL ID = {{row['url_id']}}</div>
+                <div>Original URL Crawled = 
+                  <a href="{{row['url_address']}}">{{row['url_address']}}</a>
+                </div>
+                <div>Final URL Crawled = 
+                  <a href="{{row['final_crawled_url']}}">{{row['final_crawled_url']}}</a>
+                </div>
+                <div class="text-success fw-bold">Status Code = {{row['status_code']}}</div>
                 <div>First Status Code = {{row['redirected_status_code']}}</div>
                 <div>No. of &lt;title&gt; tags = {{titles | length}}</div>
                 <div>No. of &lt;h1&gt; tags = {{h1 | length}}</div>
