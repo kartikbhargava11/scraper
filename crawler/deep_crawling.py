@@ -1,9 +1,11 @@
 import os
 from dotenv import load_dotenv
 import asyncio
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, JsonCssExtractionStrategy
+import aiohttp
+
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy
 from crawl4ai.async_configs import CacheMode, ProxyConfig
-from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
+
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy, AsyncHTTPCrawlerStrategy
 # deep crawling can explore websites beyond a single page. 
 # It has control over website's depth and filter content too
@@ -75,6 +77,46 @@ human_behavior_script_two = """
 		return true;
 	})()
 """
+
+# last resort: fetch HTML via an external service
+async def external_fetch(url: str) -> str:
+	async with aiohttp.ClientSession() as session:
+		async with session.post(
+			os.environ.get('FIRECRAWL_SCRAPE_API', 'https://api.firecrawl.dev/v2/scrape'),
+			json={"url": url, "formats": ["html"]},
+			headers={"Authorization": f"Bearer {os.environ.get('FIRECRAWL_TOKEN')}", "Content-Type": "application/json"}
+		) as resp:
+			print(resp.status)
+			response = await resp.text()
+			return response
+
+def load_proxies_from_env():
+	"Load proxies from .env"
+	proxies = []
+
+	try:
+		proxy_list = os.getenv("PROXIES", "").split(",")
+		proxies.append(ProxyConfig.DIRECT)	
+		for proxy in proxy_list:
+			if not proxy:
+				continue
+			ip, port, username, password = proxy.split(":")
+			proxies.append(
+				ProxyConfig(
+					server=f"http://{ip}:{port}",
+					username=username,
+					password=password,
+					ip=ip
+				)
+			)
+
+	except Exception as e:
+		print(f"Error loading proxies from .env {e}")
+
+	return proxies
+	
+	
+	
 
 # using BrowserConfig for global settings about the browser’s environment.
 _base_browser_config = BrowserConfig(
@@ -182,11 +224,11 @@ async def _run_crawler(url, mode, browser_config=None, run_config=None, crawler_
 					config=run_config or _base_crawler_run_config,
 				):
 					print(f"Found {len(result.links['internal'])} internal links")
-					if not result.success:
-						_extract_failures(result, mode)
-					else:
-						# extracting links from the result (instance of the CrawlerResult class)
-						_extract_links_and_depth(result)
+					# if not result.success:
+					# 	_extract_failures(result, mode)
+					# else:
+					# 	# extracting links from the result (instance of the CrawlerResult class)
+					# 	_extract_links_and_depth(result)
 			else:
 				# run the crawler on a URL without Stream Mode
 				results = await crawler.arun(
@@ -206,11 +248,18 @@ async def _run_crawler(url, mode, browser_config=None, run_config=None, crawler_
 			print(f"{e}")
 
 
-async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
+async def _get_links_using_bfs(url, max_depth=1, max_pages=1):
 	global dedup_links
 	global failed_links
 	dedup_links.clear()
 	failed_links.clear()
+
+	proxies = load_proxies_from_env()
+	
+	max_retries = 0
+
+	if proxies and len(proxies) >= 2:
+		max_retries = 1
 
 	bfs_browser_config = _base_browser_config.clone(
 		enable_stealth=True,
@@ -244,16 +293,10 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=3):
 		wait_until="load",
 		wait_time=3.0,  # Wait 3 seconds after page load
     	delay_before_return_html=2.0,  # Additional delay
-		stream=True,
-		# max_retries=1,
-		# proxy_config=[
-		# 	ProxyConfig.DIRECT,
-		# 	ProxyConfig(
-		# 		server="http://81.92.195.133:8800",
-		# 		username=os.environ['PROXY_USERNAME'],
-		# 		password=os.environ['PROXY_PASSWORD']
-		# 	)
-		# ],
+		stream=False,
+		max_retries=max_retries,
+		proxy_config=proxies if len(proxies) == 2 else None,
+		proxy_rotation_strategy=proxies if len(proxies) > 2 else None
 	)
 
 	mode="bfs-regular"
@@ -294,6 +337,8 @@ async def _scrape_content(url):
 
 	result = await _run_crawler_to_scrape_html(url, crawler_strategy=http_crawler_config)
 
+	proxies = load_proxies_from_env()
+	
 
 	# # 2nd pass try using stealth mode
 	if not result.success:
@@ -309,22 +354,17 @@ async def _scrape_content(url):
 			override_navigator=True,
 			simulate_user=True,
 			delay_before_return_html=3.0,  # Additional delay
-			# max_retries=1,
-			# proxy_config=[
-			# ProxyConfig.DIRECT,
-			# 	ProxyConfig(
-			# 		server="http://81.92.195.85:8800",
-			# 		username=os.environ['PROXY_USERNAME'],
-			# 		password=os.environ['PROXY_PASSWORD']	
-			# 	),
-			# ],
+			# fallback_fetch_function=external_fetch
+			max_retries=0,
+			proxy_config=proxies if len(proxies) == 2 else None,
+			proxy_rotation_strategy=proxies if len(proxies) > 2 else None
 		)
 
 		stealth_crawler_strategy = _get_playwright_crawl_strategy(browser_config=stealth_browser_config)
 
 		result = await _run_crawler_to_scrape_html(url, crawler_strategy=stealth_crawler_strategy, run_config=stealth_run_config, browser_config=stealth_browser_config)
 
-
+		
 		# 3rd pass try using undetected stealth mode
 		if not result.success:
 			undetected_browser_config = _base_browser_config.clone(
@@ -342,6 +382,7 @@ async def _scrape_content(url):
 				simulate_user=True,
 				override_navigator=True,
 				delay_before_return_html=5.0,  # Additional delay
+				fallback_fetch_function=external_fetch
 			)
 
 			undetected_crawler_strategy = _get_playwright_crawl_strategy(
@@ -350,6 +391,7 @@ async def _scrape_content(url):
 			)
 
 			result = await _run_crawler_to_scrape_html(url, crawler_strategy=undetected_crawler_strategy, run_config=undetected_run_config, browser_config=undetected_browser_config)
+
 	return {
 		"html": result.cleaned_html if result.success else None,
 		"status_code": result.status_code,
@@ -361,11 +403,11 @@ async def _scrape_content(url):
 
 if __name__ == "__main__":
 	print("Running...")
-	url = "https://www.sleep-coach.com/nl/blog/slaaphulpmiddelen/"
+	url = "https://robyns.be/nl"
 	
-	asyncio.run(_scrape_content(url))
+	result = asyncio.run(_scrape_content(url))
 	
-	print("Complete!")
+	print(result)
 
 
 

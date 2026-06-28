@@ -86,52 +86,63 @@ def get_scraped_links(job_id):
 
     return render_template("crawl/scraped-links-result.html", rows=rows, count=len(rows), job_id=job_id)
 
-@bp.route('/scrape-markup', methods=('POST', ))
+@bp.route('/scrape-markup', methods=('GET', 'POST'))
 @login_required
 def scrape_markup():
-    url = request.form['url'].strip()
-    url_id = request.form['url-id'].strip()
- 
-    # data sanity check
-    # verify the format of the url before sending it to crawl4ai
-    error = data_sanity_checks(
-        url=url
-    )
+    if request.method == 'POST':
+        url = request.form['url'].strip()
+        url_id = request.form['url-id'].strip()
 
-    if error:
-        flash_error_alert(error)
     
-    try:
-
-        db = get_db()
-
-        job_id = create_crawl_job(
-            db=db,
-            job_type='SCRAPE_MARKUP'
+        # data sanity check
+        # verify the format of the url before sending it to crawl4ai
+        error = data_sanity_checks(
+            url=url
         )
 
-        markup_id = create_markup(
-            db=db,
-            url_id=url_id,
-            job_id=job_id
-        )
+        if error:
+            flash_error_alert(error)
+        
+        try:
 
-        task = scrape_markup_task.delay(job_id)
+            db = get_db()
 
-        db.execute("""
-        UPDATE crawl_job
-        SET task_id = ?
-        WHERE job_id = ?       
-        """,
-        (task.id, job_id)
-        )
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        flash_error_alert(str(e))
-    else:
-        flash_info_alert('Process in Queue...')
-    return redirect(url_for('crawl.get_status'))
+            job_id = create_crawl_job(
+                db=db,
+                job_type='SCRAPE_MARKUP'
+            )
+
+            if url_id == 'NEW':
+                url_id = create_url_address(
+                    db=db,
+                    url=url,
+                    job_id=job_id
+                )
+
+            markup_id = create_markup(
+                db=db,
+                url_id=url_id,
+                job_id=job_id
+            )
+
+            task = scrape_markup_task.delay(job_id)
+
+            db.execute("""
+            UPDATE crawl_job
+            SET task_id = ?
+            WHERE job_id = ?       
+            """,
+            (task.id, job_id)
+            )
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            flash_error_alert(str(e))
+        else:
+            flash_info_alert('Process in Queue...')
+            return redirect(url_for('crawl.get_status'))
+        
+    return render_template('crawl/scrape-markup.html')
 
 
 @bp.route('/scrape-markup-bulk/result/<job_id>', methods=('GET',))
@@ -186,7 +197,7 @@ def view_scraped_content(job_id):
     
 
     if row['crawling_error_message']:
-        return render_template('crawl/scrape-markup.html', row=row)
+        return render_template('crawl/scraped-markup-results.html', row=row)
 
     titles = db.execute(
         """
@@ -223,7 +234,7 @@ def view_scraped_content(job_id):
         """, (row['url_id'],)
     ).fetchone()
 
-    return render_template('crawl/scrape-markup.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, row=row)
+    return render_template('crawl/scraped-markup-result.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, row=row)
 
 @bp.route('/scrape-markup-bulk/<job_id>', methods=('POST',))
 @login_required

@@ -21,8 +21,6 @@ HEADERS = { # browser identity
 	'Content-Type': 'text/html'
 }
 
-_exponential_back_off = (30, 60, 80)
-
 def load_proxies_from_env() -> List[Dict]:
 	"Load proxies from .env"
 	proxies = []
@@ -147,21 +145,21 @@ _base_crawler_run_config = CrawlerRunConfig(
 # avoids overwhelming target websites.
 # arun_many() uses MemoryAdaptiveDispatcher by default after 0.5.0
 
-def _get_rate_limiter(base_delay=(3.0, 5.0), max_delay=30, max_retries=1):
+def _get_rate_limiter(base_delay=(3.0, 5.0), max_delay=45, max_retries=1):
 	return RateLimiter(
-		base_delay=base_delay,
-		max_delay=max_delay,
-		max_retries=max_retries,
-		rate_limit_codes=[429, 503, 403, 202]
+		base_delay=base_delay, # random delays between 3 and 5 seconds
+		max_delay=max_delay, # cap delay at 45 seconds
+		max_retries=max_retries, # retry one more time on rate limiting errors
+		rate_limit_codes=[429, 503, 504, 202] # handle these http codes
 	)
 
 def _base_memory_adaptive_dispatcher(
-		memory_threshold_percent=90.0,
-		critical_threshold_percent=95,
-		recovery_threshold_percent=85,
-		max_session_permit=4,
-		check_interval=5.0,
-		memory_wait_timeout=1200,
+		memory_threshold_percent=90.0, # pause if memory exceeds this
+		critical_threshold_percent=95, 
+		recovery_threshold_percent=85, 
+		max_session_permit=4, # maximum concurrent tasks
+		check_interval=5.0, # how often to check the memory
+		memory_wait_timeout=1200, # raise MemoryError 
 		rate_limiter=None):
 	return MemoryAdaptiveDispatcher(
 		memory_threshold_percent=memory_threshold_percent,
@@ -176,13 +174,13 @@ def _base_memory_adaptive_dispatcher(
 
 # (Default): Uses Playwright for browser-based crawling, supporting JavaScript rendering 
 # and complex interactions.
-def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=True):
+def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=False):
 	return AsyncPlaywrightCrawlerStrategy(
 		browser_config=browser_config or _base_browser_config,
 		browser_adapter=browser_adapter or PlaywrightAdapter(),
 		# When text_mode=True, the crawler automatically: - Disables GPU processing. - Blocks image and JavaScript resources.
 		# Reduces the viewport size to 800x600 (can override this with viewport_width and viewport_height).
-		# text_mode=text_mode
+		text_mode=text_mode
 	)
 
 def _extract_failed_pages(result):
@@ -324,6 +322,8 @@ async def _scrape_html_bulk(urls):
 	#	CrawlResult,
 	# ]
 
+	print(f"LENGTH OF RESULTS [STEALTH] {len(results)}")
+
 	response = {}
 
 	retries = []
@@ -332,6 +332,8 @@ async def _scrape_html_bulk(urls):
 	if results:
 		if len(urls) == len(results): # makes sure correct number of results were returned by the crawler
 			for index in range(len(results)): # using index to map both 'urls' and 'results' together
+
+
 				if not results[index].success: # if crawl result fails, add the orginal url into 'retries' list
 					retries.append(urls[index]['url_address'])
 
@@ -352,6 +354,8 @@ async def _scrape_html_bulk(urls):
 					"success": results[index].success,
 					"mode": "STEALTH"
 				}
+
+				print(response[urls[index]['url_id']])
 
 	if retries:
 		results = await _try_undetected_and_stealth(retries)

@@ -151,6 +151,16 @@ def create_crawl_job(db, job_type):
     )
     return cur.lastrowid
 
+def create_url_address(db, url, job_id):
+    cur = db.execute(
+        """
+        INSERT INTO internal_url (url_address, depth, job_id)
+        VALUES (?,?,?)
+        """,
+        (url, None, job_id)
+    )
+    return cur.lastrowid
+
 
 flash_success_alert = partial(flash, category='success')
 
