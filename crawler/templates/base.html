@@ -12,18 +12,14 @@
     <main class="content">
         <section>
         {% for category, message in get_flashed_messages(with_categories=True) %}
-            {% if category == 'error' %}
-                <div class="alert alert-danger rounded-0 mb-0" role="alert">{{ message }}</div>
-            {% endif %}
-            {% if category == 'info' %}
-                <div class="alert alert-warning rounded-0 mb-0" role="alert">{{ message }}</div>
-            {% endif %}
-            {% if category == 'success' %}
-                <div class="alert alert-success rounded-0 mb-0" role="alert">{{ message }}</div>
-            {% endif %}
+            <div class="alert rounded-0 mb-0 {{ 'alert-danger' if category == 'error' else ('alert-warning' if category == 'info' else 'alert-success') }}" role="alert">
+                <div class="container">
+                    {{ message }}
+                </div>
+            </div>
         {% endfor %}
         </section>
-        <section class="container py-5">
+        <section id="main-content" class="container py-5">
             {% block content %}{% endblock %}
         </section>
     </main>

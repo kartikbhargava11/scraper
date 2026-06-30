@@ -9,3 +9,8 @@ bp = Blueprint('home', __name__)
 @bp.route('/', methods=('GET',))
 def index():
     return render_template('home/index.html')
+
+
+@bp.route('/page-not-found', methods=('GET',))
+def page_not_found():
+    return render_template('not-found.html')

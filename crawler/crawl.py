@@ -69,7 +69,6 @@ def scrape_links():
     # return the template for GET request
     return render_template('crawl/scrape-links.html')
     
-
 @bp.route('/scrape-links/result/<job_id>', methods=('GET',))
 @login_required
 def get_scraped_links(job_id):
@@ -144,99 +143,55 @@ def scrape_markup():
         
     return render_template('crawl/scrape-markup.html')
 
-
-@bp.route('/scrape-markup-bulk/result/<job_id>', methods=('GET',))
-@login_required
-def view_scraped_content_for_bulk_scrape(job_id):
-    db = get_db()
-
-    rows = db.execute(
-        """
-        SELECT *
-        FROM markup m
-        LEFT JOIN internal_url i ON m.url_id = i.url_id
-        WHERE m.job_id = ?
-        """,
-        (job_id,)
-    ).fetchall()
-
-    return render_template('crawl/scrape-markup-bulk.html', rows=rows)
-
-
 @bp.route('/scrape-markup/result/<job_id>', methods=('GET', 'POST'))
 @login_required
-def view_scraped_content(job_id):
+def view_scraped_markup(job_id):
+
     db = get_db()
+
+    job = db.execute(
+        """
+        SELECT *
+        FROM crawl_job
+        WHERE job_id = ?
+        """,
+        (job_id,)
+    ).fetchone()
+
+    if not job:
+        flash_error_alert("Page Not Found. 404")
+        return redirect(url_for('home.page_not_found'), code=404)
+
+    rows = []
+
     if request.method == 'POST':
-        markup_id = request.form.get('markup-id')
-        url_id = request.form.get('url-id')
-        row = db.execute(
+        markup_id = request.form['markup-id'].strip()
+        url_id = request.form['url-id'].strip()
+        rows = db.execute(
             """
-            SELECT *
+            SELECT m.markup_id, i.url_address, m.status_code, m.final_crawled_url, m.redirected_status_code, m.crawling_error_message, m.url_id, m.job_id
             FROM markup m
-            INNER JOIN internal_url i ON m.url_id = i.url_id
+            INNER JOIN internal_url i ON i.url_id = m.url_id
             WHERE m.job_id = ? AND m.markup_id = ? AND m.url_id = ?
             """,
             (job_id, markup_id, url_id)
-        ).fetchone()
+        ).fetchall()
 
-    else:
-        row = db.execute(
+    elif request.method == 'GET':
+
+        rows = db.execute(
             """
-            SELECT *
+            SELECT m.markup_id, i.url_address, m.status_code, m.final_crawled_url, m.redirected_status_code, m.crawling_error_message, m.url_id, m.job_id
             FROM markup m
-            INNER JOIN internal_url i ON m.url_id = i.url_id
+            LEFT JOIN internal_url i ON i.url_id = m.url_id
             WHERE m.job_id = ?
             """,
             (job_id,)
-        ).fetchone()
+        ).fetchall()
 
-    if not row:
-        flash_error_alert("Page Not Found. 404")
-        return render_template('not-found.html')
-    
+    return render_template('crawl/scraped-markup-result.html', rows=rows, count=len(rows))
 
-    if row['crawling_error_message']:
-        return render_template('crawl/scraped-markup-results.html', row=row)
-
-    titles = db.execute(
-        """
-        SELECT title FROM title_tag
-        WHERE url_id = ?
-        """, (row['url_id'],)
-    ).fetchall()
-
-    h1 = db.execute(
-        """
-        SELECT h1 FROM h1_tag
-        WHERE url_id = ?
-        """, (row['url_id'],)
-    ).fetchall()
-
-    h2 = db.execute(
-        """
-        SELECT h2 FROM h2_tag
-        WHERE url_id = ?
-        """, (row['url_id'],)
-    ).fetchall()
-
-    alt = db.execute(
-        """
-        SELECT alt_text, img_tag FROM img_alt_tag
-        WHERE url_id = ?
-        """, (row['url_id'],)
-    ).fetchall()
-
-    missing_alt = db.execute(
-        """
-        SELECT count(*) as cnt FROM img_alt_tag
-        WHERE url_id = ? AND alt_text IS NULL;
-        """, (row['url_id'],)
-    ).fetchone()
-
-    return render_template('crawl/scraped-markup-result.html', alt=alt, h1=h1, h2=h2, titles=titles, missing_alt=missing_alt, row=row)
-
-@bp.route('/scrape-markup-bulk/<job_id>', methods=('POST',))
+@bp.route('/scrape-markup/bulk/<job_id>', methods=('POST',))
 @login_required
 def scrape_markup_bulk(job_id):
     try:
@@ -253,7 +208,7 @@ def scrape_markup_bulk(job_id):
 
         if not row:
             flash_error_alert("Page Not Found. 404")
-            return render_template("not-found.html")
+            return redirect(url_for("home.page_not_found"), code=404)
         
         _job_id = create_crawl_job(
             db=db,
@@ -293,7 +248,6 @@ def get_status():
     ).fetchall()
     return render_template("crawl/check-status.html", rows=rows)
 
-
 @bp.route('/delete/<job_id>', methods=('POST',))
 @login_required
 def delete_job(job_id):
@@ -306,9 +260,4 @@ def delete_job(job_id):
     flash_info_alert("Deleted the results")
 
     return redirect(url_for("crawl.get_status")) 
-
-
-
-
-
 

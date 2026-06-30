@@ -14,16 +14,6 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
     with flask_app.app_context():
         db = get_db()
 
-        row = db.execute( # [Safe-check] confirming whether new job has been registed in the database or not
-            """
-            SELECT job_id FROM crawl_job
-            WHERE job_id = ?
-            """,
-            (_job_id,)
-        ).fetchone()
-        if not row:
-            return None
-
         rows = db.execute( # Fetching all the URLs to scrape
             """
             SELECT i.url_address, i.url_id
@@ -37,7 +27,7 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
 
         if not rows: # if no URLs found raise exception
             raise ERROR_CODE_400(
-                "No URLs Found"
+                log_message="No URLs Found"
             )
         
         mark_crawl_job_started(db, self.request.id, _job_id) # set the status of the job as started
@@ -62,19 +52,19 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
 
             # results = asyncio.run(crawl_bulk(rows)) # call to crawling engine, returns a dict
 
-            if len(results) != len(rows):
+            if len(results) < 1:
                 raise CRAWL_FAILED(
-                    log_message='Crawling Engine did not return all the results'
+                    log_message='Crawling Engine did not return the results'
                 )
-            
+
+
             payload = []
 
             # save the results for each URL with their corresponding url_id in a list to save them in the database
-            for key, value in results.items():
+            for res in results.values():
                 payload.append(
-                    (value['html'], value['status_code'], value['final_crawled_url'], value['redirected_status_code'], value['crawling_error_message'], value['url_id'], _job_id)
+                    (res['html'], res['status_code'], res['final_crawled_url'], res['redirected_status_code'], res['crawling_error_message'], res['url_id'], _job_id)
                 )
-
             
 
             db.executemany( # running SQL command to update the 
@@ -86,9 +76,9 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
             )
             db.commit()
 
-            for value in results.values():
-                if value['success'] and value['html']:
-                    save_html_tags(db, value['html'], value['url_id'])
+            for res in results.values():
+                if res['success'] and res['html']:
+                    save_html_tags(db, res['html'], res['url_id'])
 
             mark_crawl_job_success(db, _job_id)
             
@@ -96,7 +86,6 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
             db.rollback()
             mark_crawl_job_failure(db, str(e), _job_id)
             raise
-            
 
 @celery_global_instance.task(bind=True, ignore_result=False)
 def scrape_markup_task(self, job_id):
@@ -199,13 +188,13 @@ def scrape_links_task(self, job_id):
         mark_crawl_job_started(db, self.request.id, job_id)
 
         try:
-            if job['job_type'] == 'firecrawl-map':
+            if job['job_type'] == 'FIRECRAWL_MAP':
                 # firecrawl service
                 links = call_firecrawl_map(job['website_url'])
                 for link in links:
                     if link.get('url'):
                         rows.append(
-                            (link['url'], None, job['job_id'])
+                            (link['url'], job['job_id'])
                         )
             else:
                 # crawl4AI
@@ -213,23 +202,37 @@ def scrape_links_task(self, job_id):
                 try:
                     # Check if an event loop is already assigned to this worker thread
                     loop = asyncio.get_event_loop()
-                except RuntimeError:
+                except RuntimeError as e:
+                    print(str(e))
                     # Create a new isolated loop if none exists
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
+                    
                 # Run your async function to completion inside the safe loop
-                links = loop.run_until_complete(bfs(job['website_url']))
 
-                # links = asyncio.run(bfs(job['website_url']))
+                if job['job_type'] == 'DEEP_CRAWLING':
+                    response = loop.run_until_complete(bfs(job['website_url']))
+                    for res in response:
+                        if res['success']:
+                            for link in res['links']:
+                                rows.append((link['href'], job['job_id']))
 
-                for link, depth in links.items():
-                    rows.append((link, depth, job['job_id']))
+                elif job['job_type'] == 'DEEP_CRAWLING_FAST':
+                    response = loop.run_until_complete(prefetch_links(job['website_url']))
+
+                    if response['success']:
+                        for link in response['links']:
+                            rows.append((link['href'], job['job_id']))
+                    else:
+                        raise CRAWL_FAILED(
+                            log_message=response['error_message']
+                        )
 
             db.executemany(
                 """
-                INSERT INTO internal_url (url_address, depth, job_id)
-                VALUES (?, ?, ?)
+                INSERT INTO internal_url (url_address, job_id)
+                VALUES (?, ?)
                 """,
                 rows
             )

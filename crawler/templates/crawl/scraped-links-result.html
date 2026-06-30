@@ -63,16 +63,16 @@
         <td>
           {% if rows[index]['markup_job_id'] %}
             <div class="d-grid">
-              <form method="POST" action="{{ url_for('crawl.view_scraped_content', job_id=rows[index]['markup_job_id']) }}">
+              <form method="POST" action="{{ url_for('crawl.view_scraped_markup', job_id=rows[index]['markup_job_id']) }}">
                 <input type="hidden" name="markup-id" value="{{rows[index]['markup_id']}}">
                 <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
-                <input type="submit" class="btn btn-success rounded-0" value="View HTML">
+                <input type="submit" class="btn btn-success rounded-0" value="View Markup">
               </form>
           {% else %}
             <form method="POST" action="{{ url_for('crawl.scrape_markup') }}">
               <input type="hidden" name="url" value="{{rows[index]['url_address']}}">
               <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
-              <input type="submit" class="btn btn-outline-primary rounded-0" value="Fetch HTML ⚡️">
+              <input type="submit" class="btn btn-outline-secondary rounded-0" value="Fetch Markup ⚡️">
             </form>
             </div>
           {% endif %}

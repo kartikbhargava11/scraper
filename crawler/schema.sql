@@ -45,7 +45,7 @@ CREATE TABLE internal_url (
 CREATE TABLE markup (
     markup_id INTEGER PRIMARY KEY AUTOINCREMENT,
     html TEXT,
-    url_id INTEGER NOT NULL,
+    url_id INTEGER NOT NULL UNIQUE,
     job_id INTEGER NOT NULL,
     status_code INTEGER,
     final_crawled_url TEXT,

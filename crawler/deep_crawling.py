@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import aiohttp
-
+import redis.asyncio as redis
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy
 from crawl4ai.async_configs import CacheMode, ProxyConfig
 
@@ -19,6 +19,7 @@ from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, Domain
 # Added LXMLWebScrapingStrategy for faster HTML parsing using the lxml library. 
 # This can significantly improve scraping performance, especially for large or complex pages.
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+from crawl4ai.user_agent_generator import UserAgentGenerator
 
 load_dotenv()
 
@@ -26,6 +27,8 @@ HEADERS = { # browser identity
 	'Accept-Language': 'en-US',
 	'Content-Type': 'text/html'
 }
+
+ua_generator = UserAgentGenerator()
 
 human_behavior_script_one = """
 	(async () => {
@@ -93,7 +96,6 @@ async def external_fetch(url: str) -> str:
 def load_proxies_from_env():
 	"Load proxies from .env"
 	proxies = []
-
 	try:
 		proxy_list = os.getenv("PROXIES", "").split(",")
 		proxies.append(ProxyConfig.DIRECT)	
@@ -109,22 +111,17 @@ def load_proxies_from_env():
 					ip=ip
 				)
 			)
-
 	except Exception as e:
 		print(f"Error loading proxies from .env {e}")
 
 	return proxies
-	
-	
-	
 
 # using BrowserConfig for global settings about the browser’s environment.
 _base_browser_config = BrowserConfig(
 	headless=True,
-	headers=HEADERS,
-	viewport_width=800,
-    viewport_height=600,
-	user_agent_mode="random",
+	user_agent=ua_generator.generate(os_type="windows", device_type="desktop", browser_type="chrome"),
+	viewport_width=1200,
+    viewport_height=800,
 	extra_args=[
 		"--disable-extensions",
 		"--disable-gpu",  # Disable GPU acceleration
@@ -135,7 +132,6 @@ _base_browser_config = BrowserConfig(
 	avoid_css=True,
 	avoid_ads=True,
 )
-
 
 _base_crawler_run_config = CrawlerRunConfig(
 	locale="en-US", # Great for accessing region-specific content or testing global behavior.
@@ -156,14 +152,12 @@ _base_crawler_run_config = CrawlerRunConfig(
 	cache_mode=CacheMode.BYPASS,
 )
 
-
 _base_http_crawl_config = HTTPCrawlerConfig(
 	method="GET",
 	headers=HEADERS,
 	verify_ssl=True,
 	follow_redirects=True,
 )
-
 
 # A lightweight, fast, and memory-efficient HTTP-only crawler. Ideal for simple scraping tasks 
 # where browser rendering is unnecessary.
@@ -172,10 +166,9 @@ def _get_http_crawl_strategy(browser_config=None):
 		browser_config=browser_config or _base_http_crawl_config
 	)
 
-
 # (Default): Uses Playwright for browser-based crawling, supporting JavaScript rendering 
 # and complex interactions.
-def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=True):
+def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=False):
 	return AsyncPlaywrightCrawlerStrategy(
 		browser_config=browser_config or _base_browser_config,
 		browser_adapter=browser_adapter or PlaywrightAdapter(),
@@ -184,41 +177,12 @@ def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, te
 		text_mode=text_mode
 	)
 
-
-
-dedup_links = {}
-failed_links = {}
-
-def _extract_failures(result, mode):
-	global failed_links
-
-	if result.url not in failed_links:
-		failed_links[result.url] = []
-	
-	failed_links[result.url].append({
-		"mode": mode,
-		"error": result.error_message,
-		"status_code": result.status_code,
-		"redirected_status_code": result.redirected_status_code,
-	})
-
-
-def _extract_links_and_depth(result):
-	global dedup_links
-
-	for link in result.links.get('internal', []):
-		if link['href'] not in dedup_links:
-			dedup_links[link["href"]] = result.metadata.get('depth', 0) 
-
-
-
-
-async def _run_crawler(url, mode, browser_config=None, run_config=None, crawler_strategy=None, enable_stream=True):
+async def _run_crawler(url, browser_config=None, run_config=None, crawler_strategy=None):
 	# create an instance of AsyncWebCrawler
 	async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
 		try:
 			# run the crawler on a URL with Stream Mode
-			if enable_stream:
+			if run_config.stream:
 				async for result in await crawler.arun(
 					url=url,
 					config=run_config or _base_crawler_run_config,
@@ -229,6 +193,7 @@ async def _run_crawler(url, mode, browser_config=None, run_config=None, crawler_
 					# else:
 					# 	# extracting links from the result (instance of the CrawlerResult class)
 					# 	_extract_links_and_depth(result)
+					return []
 			else:
 				# run the crawler on a URL without Stream Mode
 				results = await crawler.arun(
@@ -236,30 +201,29 @@ async def _run_crawler(url, mode, browser_config=None, run_config=None, crawler_
 					config=run_config or _base_crawler_run_config
 				)
 				# Wait for ALL results to be collected before returning
-				for result in results:
-					# failure
-					if not result.success:
-						_extract_failures(result, mode)
-					# success
-					else:
-						_extract_links_and_depth(result)
+				return results
 		except Exception as e:
 			print("EXCEPTION")
 			print(f"{e}")
 
+def process_crawl_result(results):
+	urls = []
+	print(f"Crawled {len(results)} pages in total")
+	for result in results:
+		print(f"Found {len(result.links['internal'])} in total")
+		urls.append({
+			"links": result.links['internal'] if result.success else None,
+			"status_code": result.status_code,
+			"success": result.success,
+			"error_message": result.error_message,
+			"redirected_status_code": result.redirected_status_code,
+			"depth": result.metadata.get('depth', None),
+		})
+	return urls
 
 async def _get_links_using_bfs(url, max_depth=1, max_pages=1):
-	global dedup_links
-	global failed_links
-	dedup_links.clear()
-	failed_links.clear()
-
-	proxies = load_proxies_from_env()
 	
-	max_retries = 0
-
-	if proxies and len(proxies) >= 2:
-		max_retries = 1
+	proxies = load_proxies_from_env()
 
 	bfs_browser_config = _base_browser_config.clone(
 		enable_stealth=True,
@@ -269,7 +233,7 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=1):
 
 	filter_chain = FilterChain([
 		# Only follow URLs not containing "logout" or "account" or "dashboard" or common media file extensions. This helps avoid crawling irrelevant or sensitive pages.
-		URLPatternFilter(patterns=["*logout*", "*account*", "*dashboard*", "*.jpg", "*.jpeg", "*.pdf", "*.gif", "*.png", "*.mp4", "*.mp3", "*.avif", "*.avi"], reverse=True),
+		URLPatternFilter(patterns=["*logout*", "*account*", "*dashboard*", r"^[^?]*$"], reverse=True),
 
 		# only crawl specific domains
 		DomainFilter(
@@ -294,42 +258,58 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=1):
 		wait_time=3.0,  # Wait 3 seconds after page load
     	delay_before_return_html=2.0,  # Additional delay
 		stream=False,
-		max_retries=max_retries,
+		max_retries=0,
 		proxy_config=proxies if len(proxies) == 2 else None,
 		proxy_rotation_strategy=proxies if len(proxies) > 2 else None
 	)
 
-	mode="bfs-regular"
-
 	bfs_crawler_strategy = _get_playwright_crawl_strategy(browser_config=bfs_browser_config)
 
-	await _run_crawler(
+	results = await _run_crawler(
 		url,
-		mode,
 		browser_config=bfs_browser_config,
 		run_config=bfs_run_config,
 		crawler_strategy=bfs_crawler_strategy
 	)
 	
-	return dedup_links
+	return process_crawl_result(results)
 
 
+async def _get_links_using_prefetch_mode(url):
+	run_config = CrawlerRunConfig(
+		prefetch=True
+	)
+	async with AsyncWebCrawler() as crawler:
+		result = await crawler.arun(url, config=run_config)
+	
+	return {
+		"links": result.links['internal'] if result.success else None,
+		"final_url": result.url,
+		"status_code": result.status_code,
+		"success": result.success,
+		"error_message": result.error_message,
+		"redirected_status_code": result.redirected_status_code
+	}
 
 async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None, crawler_strategy=None):
-	async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
-		result = await crawler.arun(
-			url,
-			config=run_config or _base_crawler_run_config
-		)
-		if result.success:
-			print(f"result.success: {result.success}")
-			print(f"result.status_code: {result.status_code}")
+	try:
+		async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
+			result = await crawler.arun(
+				url,
+				config=run_config or _base_crawler_run_config
+			)
+			if result.success:
+				print(f"result.success: {result.success}")
+				print(f"result.status_code: {result.status_code}")
+			
 			return result
-		else:
-			return result
-
-		
-
+	except Exception as e:
+		print("EXCEPTION RAISED")
+		response = {
+			"success": False,
+			"error": str(e)
+		}
+		return response
 
 async def _scrape_content(url):
 	# 1st pass try HTTP crawler strategy
@@ -340,10 +320,9 @@ async def _scrape_content(url):
 	proxies = load_proxies_from_env()
 	
 
-	# # 2nd pass try using stealth mode
+	# 2nd pass try using stealth mode
 	if not result.success:
 		stealth_browser_config = _base_browser_config.clone(
-			text_mode=True,
 			enable_stealth=True,
 		)
 
@@ -368,7 +347,6 @@ async def _scrape_content(url):
 		# 3rd pass try using undetected stealth mode
 		if not result.success:
 			undetected_browser_config = _base_browser_config.clone(
-				text_mode=False,
 				enable_stealth=True,
 				viewport_width=1920,
 				viewport_height=1080,
@@ -405,7 +383,9 @@ if __name__ == "__main__":
 	print("Running...")
 	url = "https://robyns.be/nl"
 	
-	result = asyncio.run(_scrape_content(url))
+	# result = asyncio.run(_scrape_content(url))
+
+	result = asyncio.run(_get_links_using_prefetch_mode(url))
 	
 	print(result)
 

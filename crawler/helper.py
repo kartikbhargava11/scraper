@@ -9,48 +9,11 @@ from bs4 import BeautifulSoup
 
 
 # importing functions that handle crawling
-from crawler.deep_crawling import _get_links_using_bfs, _scrape_content
+from crawler.deep_crawling import _get_links_using_bfs, _scrape_content, _get_links_using_prefetch_mode
 from crawler.audit import _scrape_html_bulk
 
 load_dotenv()
 
-
-def mark_crawl_job_started(db, task_id, job_id):
-    status = os.environ.get('CODE_STARTED', 'STARTED')
-    db.execute(
-        """
-        UPDATE crawl_job
-        SET job_status = ?, task_id = ?, started_at = CURRENT_TIMESTAMP
-        WHERE job_id = ?
-        """,
-        (status, task_id, job_id)
-    )
-    db.commit()
-
-
-def mark_crawl_job_success(db, job_id):
-    status = os.environ.get('CODE_SUCCESS', 'SUCCESS')
-    db.execute(
-        """
-        UPDATE crawl_job
-        SET job_status = ?, finished_at = CURRENT_TIMESTAMP
-        WHERE job_id = ?
-        """,
-        (status, job_id)
-    )
-    db.commit()
-
-def mark_crawl_job_failure(db, error_message, job_id):
-    status = os.environ.get('CODE_FAILURE', 'FAILURE')
-    db.execute(
-    """
-    UPDATE crawl_job
-    SET job_status = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
-    WHERE job_id = ?
-    """,
-    (status, error_message, job_id)
-    )
-    db.commit()
 
 
 # Helper function to check the validity of the URL, using regular expression
@@ -76,6 +39,8 @@ def is_valid_range(num, max=5):
 async def crawl_bulk(urls):
     return await _scrape_html_bulk(urls)
 
+async def prefetch_links(url):
+    return await _get_links_using_prefetch_mode(url)
 
 async def bfs(url):
     # function returns all the internal links & their depth in the given URL 
@@ -154,13 +119,49 @@ def create_crawl_job(db, job_type):
 def create_url_address(db, url, job_id):
     cur = db.execute(
         """
-        INSERT INTO internal_url (url_address, depth, job_id)
-        VALUES (?,?,?)
+        INSERT INTO internal_url (url_address, job_id)
+        VALUES (?,?)
         """,
-        (url, None, job_id)
+        (url, job_id)
     )
     return cur.lastrowid
 
+def mark_crawl_job_started(db, task_id, job_id):
+    status = os.environ.get('CODE_STARTED', 'STARTED')
+    db.execute(
+        """
+        UPDATE crawl_job
+        SET job_status = ?, task_id = ?, started_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?
+        """,
+        (status, task_id, job_id)
+    )
+    db.commit()
+
+
+def mark_crawl_job_success(db, job_id):
+    status = os.environ.get('CODE_SUCCESS', 'SUCCESS')
+    db.execute(
+        """
+        UPDATE crawl_job
+        SET job_status = ?, finished_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?
+        """,
+        (status, job_id)
+    )
+    db.commit()
+
+def mark_crawl_job_failure(db, error_message, job_id):
+    status = os.environ.get('CODE_FAILURE', 'FAILURE')
+    db.execute(
+    """
+    UPDATE crawl_job
+    SET job_status = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
+    WHERE job_id = ?
+    """,
+    (status, error_message, job_id)
+    )
+    db.commit()
 
 flash_success_alert = partial(flash, category='success')
 

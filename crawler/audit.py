@@ -1,56 +1,47 @@
 import os
+
+import asyncio
+import aiohttp
+from crawl4ai import AsyncWebCrawler, RateLimiter, UndetectedAdapter, GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy
+from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, CrawlerRunConfig
+from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
+from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
+from playwright.async_api import Page, BrowserContext
+from crawl4ai.async_logger import AsyncLogger
+from crawl4ai.user_agent_generator import UserAgentGenerator
+
 from dotenv import load_dotenv
-from typing import List, Dict
+
 
 load_dotenv()
 
-import asyncio
-from crawl4ai import AsyncWebCrawler, RateLimiter, UndetectedAdapter, HTTPCrawlerConfig, GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy
-from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, CrawlerRunConfig
-from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
-from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy, AsyncHTTPCrawlerStrategy
-from playwright.async_api import Page, BrowserContext
 
-from crawl4ai.async_logger import AsyncLogger
-from crawl4ai.user_agent_generator import UserAgentGenerator
-    
-
-# CONSTANTS
-HEADERS = { # browser identity
-	'Accept-Language': 'nl-NL',
-	'Content-Type': 'text/html'
-}
-
-def load_proxies_from_env() -> List[Dict]:
+def load_proxies_from_env():
 	"Load proxies from .env"
 	proxies = []
 
 	try:
 		proxy_list = os.getenv("PROXIES", "").split(",")
+		proxies.append(ProxyConfig.DIRECT)	
 		for proxy in proxy_list:
 			if not proxy:
 				continue
 			ip, port, username, password = proxy.split(":")
-			proxies.append({
-				"server": f"http://{ip}:{port}",
-				"username": username,
-				"password": password,
-				"ip": ip
-			})
+			proxies.append(
+				ProxyConfig(
+					server=f"http://{ip}:{port}",
+					username=username,
+					password=password,
+					ip=ip
+				)
+			)
+
 	except Exception as e:
 		print(f"Error loading proxies from .env {e}")
+
 	return proxies
 
-def proxy_rotation_batch():
-	proxies = load_proxies_from_env()
-	if not proxies:
-		print("No proxies found in .env | Set PROXIES .env")
-		return None
-	return RoundRobinProxyStrategy(proxies)
-	
-
 # Simulate human-like behavior
-
 human_behavior_script_one = """
 	(async () => {
 		// Wait random time between actions
@@ -111,7 +102,6 @@ _base_browser_config = BrowserConfig(
 	viewport_width=1280,
 	viewport_height=800,
 	user_agent=ua_generator.generate(os_type="windows", device_type="desktop", browser_type="chrome"),
-	text_mode=True,
 	avoid_css=True,
 	avoid_ads=True,
 	enable_stealth=True,
@@ -132,12 +122,11 @@ _base_crawler_run_config = CrawlerRunConfig(
 	wait_until="load",
 	cache_mode=CacheMode.BYPASS,
 	excluded_selector="#ads, .tracker, _csrf",
+	scan_full_page=True,
 	stream=False,
 	process_iframes=False,
 	remove_overlay_elements=True,
-	page_timeout=20000,
-	delay_before_return_html="2.0",
-	# proxy_rotation_strategy=proxy_rotation_batch()
+	delay_before_return_html=2.0,
 )
 
 # MemoryAdaptiveDispatcher dynamically adjusts concurrency based on available system memory and 
@@ -183,80 +172,58 @@ def _get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, te
 		text_mode=text_mode
 	)
 
-def _extract_failed_pages(result):
-	if result.status_code in (301, 302, 307, 308) and result.redirected_status_code != 200:
-		print(f"Redirected to {result.redirected_url} [Fail]")
-	elif result.status_code == 202:
-		print("URL is still processing, it will be given more time [Fail]")
-		
-	elif result.status_code == 403:
-		print("Page you're tryna find is blocked")
-	elif result.status_code == 404:
-		print("Page you're tryna find ain't there")
-	elif result.status_code == 429:
-		print("Too many requests coz server is overwhelmed")
-	elif result.status_code in (500, 501, 502, 503):
-		print("Server ain't responding amigo")
-	else:
-		print(f"Misc Failing Case StatusCode={result.status_code} ErrorMessage={result.error_message}")
-
-def _extract_succeed_pages(result):
-
-	if result.status_code == 200 and not result.error_message:
-		print("URL Pass without error message and no redirects")
-
-	elif result.status_code == 202:
-		print("URL is still processing, it will be given more time [Pass]")
-		
-
-	elif result.status_code in (301, 302, 307, 308) and result.redirected_status_code == 200:
-		print(f"Redirected to {result.redirected_url} [OK]")
-
-	elif result.status_code in (301, 302, 307, 308) and result.redirected_status_code != 200:
-		print(f"Redirected to {result.redirected_url} [Soft Fail]")
-
-	else:
-		print(f"Misc Passing Case StatusCode={result.status_code}, ErrorMessage={result.error_message}, RedirectCode={result.redirected_status_code}, FinalCrawlerUrl={result.url}")
-
 
 async def _run_crawler_batch(urls, browser_config=None, run_config=None, crawler_strategy=None, dispatcher=None):
 
-	async def before_return_html(page: Page, context: BrowserContext, html: str, **kwargs):
-		"""Hook called before returning the HTML content"""
-
-		print(f"[HOOK] before_return_html - Got HTML content (length: {len(html)})")
-		
-		return page
+	response_dict = {}
 
 	# Create crawler instance
-	crawler = AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config)
+	async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
 
-	crawler.crawler_strategy.set_hook("before_return_html", before_return_html)
-	try:
-		await crawler.start()
-		results = await crawler.arun_many(
-			urls=urls,
-			config=run_config or _base_crawler_run_config,
-			dispatcher=dispatcher or _base_memory_adaptive_dispatcher()
-		)
-		return results
-	except Exception as e:
-		print("EXCEPTION")
-		print(f"{e}")
-		return None
-	finally:
-		await crawler.close()
-		
+		_count_403s = False
+		_count_429s = False
+		_count_202s = False
 
+		for url in urls:
+			try:
+				result = await crawler.arun(
+					url=url['url_address'],
+					config=run_config or _base_crawler_run_config,
+				)
+				response_dict[url['url_id']] = {
+					"url_id": url['url_id'],
+					"url_address": url['url_address'],
+					"redirected_status_code": result.redirected_status_code,
+					"final_crawled_url": result.url,
+					"status_code": result.status_code,
+					"html": len(result.cleaned_html) if result.success else None,
+					"crawling_error_message": result.error_message,
+					"success": result.success,	
+				}
 
+				if result.status_code in (429, 202):
+					print(f"Status code: {result.status_code}")
+					print("Waiting for 5 seconds")
+					await asyncio.sleep(5)
+				
+			except Exception as e:
+				response_dict.clear()
+				print(f"Exception: {str(e)}")
+
+	return response_dict
 
 async def _try_stealth(urls):
+	proxies = load_proxies_from_env()
 	
 	stealth_run_config = _base_crawler_run_config.clone(
 		js_code=human_behavior_script_one,
 		wait_until="load",
 		magic=True,
     	delay_before_return_html=2.0,  # Additional delay
+		max_retries=0,
+		proxy_config=proxies if len(proxies) == 2 else None,
+		proxy_rotation_strategy=proxies if len(proxies) > 2 else None,
+		session_id="xx127421x2281adzsa14"
 	)
 
 	crawler_strategy = _get_playwright_crawl_strategy()
@@ -271,7 +238,6 @@ async def _try_stealth(urls):
 async def _try_undetected_and_stealth(urls):
 
 	undetected_browser_config = _base_browser_config.clone(
-		headless=True,
 		viewport_width=1920,
 		viewport_height=1080,
 	)
@@ -284,21 +250,19 @@ async def _try_undetected_and_stealth(urls):
 		wait_until="networkidle",
 		js_code=human_behavior_script_two,
 		magic=True,
+		simulate_user=True,
+		override_navigator=True,
+		session_id="xx127421x2281adzsa14",
     	delay_before_return_html=4.0,  # Additional delay
-	)
-	undetected_memory_dispatcher = _base_memory_adaptive_dispatcher(
-		memory_threshold_percent=92.0,
-		critical_threshold_percent=97,
-		recovery_threshold_percent=92.0,
-		memory_wait_timeout=1800,
-		rate_limiter= _get_rate_limiter(
-			base_delay=(3.0, 4.0),
-			max_delay=60,
-			max_retries=1
-		)
+		# fallback_fetch_function=external_fetch
 	)
 
-	return await _run_crawler_batch(urls, run_config=undetected_run_config, crawler_strategy=crawler_strategy, browser_config=undetected_browser_config, dispatcher=undetected_memory_dispatcher)
+	return await _run_crawler_batch(
+		urls,
+		run_config=undetected_run_config,
+		crawler_strategy=crawler_strategy,
+		browser_config=undetected_browser_config
+	)
 
 
 async def _scrape_html_bulk(urls):
@@ -308,79 +272,48 @@ async def _scrape_html_bulk(urls):
 	#	{url_id: 13, url_address: 'https://apple.com'},
 	# ]
 
+	print(f"Crawling {len(urls)} urls using STEALTH mode")
+
+	response = await _try_stealth(urls)
 	
-	
-	list_of_urls = [url['url_address'] for url in urls]
-	# [
-	#	'https://google.com',
-	#	'https://apple.com',
-	# ]
+	retries = [{"url_id": url_id, "url_address": res['url_address']} for url_id, res in response.items() if not res['success']]
 
-	results = await _try_stealth(list_of_urls)
-	# [
-	#	CrawlResult,
-	#	CrawlResult,
-	# ]
+	print(f"{len(retries)} failed out of {len(urls)} total urls using STEALTH")
 
-	print(f"LENGTH OF RESULTS [STEALTH] {len(results)}")
-
-	response = {}
-
-	retries = []
-	failed_urls = []
-	
-	if results:
-		if len(urls) == len(results): # makes sure correct number of results were returned by the crawler
-			for index in range(len(results)): # using index to map both 'urls' and 'results' together
-
-
-				if not results[index].success: # if crawl result fails, add the orginal url into 'retries' list
-					retries.append(urls[index]['url_address'])
-
-					failed_urls.append({
-						'url_id': urls[index]['url_id'],
-						'url_address': urls[index]['url_address']	
-					})
-
-				# save the custom result into a list 'response' to return to Flask app
-				response[urls[index]['url_id']] = {
-					"url_id": urls[index]['url_id'],
-					"original_url": urls[index]['url_address'],
-					"final_crawled_url": results[index].url,
-					"html": results[index].cleaned_html if results[index].success else None,
-					"status_code": results[index].status_code,
-					"redirected_status_code": results[index].redirected_status_code,
-					"crawling_error_message": results[index].error_message,
-					"success": results[index].success,
-					"mode": "STEALTH"
-				}
-
-				print(response[urls[index]['url_id']])
+	print(f"Retrying {len(retries)} urls using UNDETECTED_STEATH")
 
 	if retries:
-		results = await _try_undetected_and_stealth(retries)
-		if results:
-			if len(retries) == len(results):
-				for index in range(len(results)):
-					if failed_urls[index]['url_id'] == response[failed_urls[index]['url_id']]['url_id']:
-						response[failed_urls[index]['url_id']] = {
-							"url_id": failed_urls[index]['url_id'],
-							"original_url": failed_urls[index]['url_address'],
-							"final_crawled_url": results[index].url,
-							"html": results[index].cleaned_html if results[index].success else None,
-							"status_code": results[index].status_code,
-							"redirected_status_code": results[index].redirected_status_code,
-							"crawling_error_message": results[index].error_message,
-							"success": results[index].success,
-							"mode": "UNDETECTED_STEALTH"
-						}
+		retry_response = await _try_undetected_and_stealth(retries)
 
+		failed = [{"url_id": url_id, "url_address": res['url_address']} for url_id, res in retry_response.items() if not res['success']]
+
+		print(f"{len(failed)} failed out of {len(retry_response)} retryables urls using UNDETECTED_STEATH")
+
+		if len(failed) < len(retry_response):
+			for url_id, res in retry_response.items():
+				if res['success']:
+					response[url_id] = res
 	
 	return response
+	# response <- dict of dicts
+	# {
+	#	12: { "url_address": 'https://google.com', .... },
+	# 	13: { "url_address": 'https://apple.com', .... },
+	# }
+
 
 
 if __name__ == "__main__":
 	print("Running...")
+	urls = [
+		{"url_id": 1, "url_address": "https://robyns.be/nl",},
+		{"url_id": 2, "url_address": "https://curlystuff.nl/krullen-sale/",},
+		{"url_id": 3, "url_address": "https://curlystuff.nl/product/satijnen-beannie-beige/",}
+	]
+	
+	result = asyncio.run(_scrape_html_bulk(urls))
+	
+	print(result)
 	
 
     
