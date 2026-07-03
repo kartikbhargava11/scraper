@@ -61,8 +61,8 @@ def call_firecrawl_map(url):
         "ignoreCache": True,
         "limit": 5000,
         "location": {
-            "country": os.environ.get('COUNTRY', 'US'),
-            "languages": ["en-US"]
+            "country": os.environ.get('COUNTRY', 'IND'),
+            "languages": [os.environ.get('LOACALE', 'en-IN')]
         },
         "timeout": int(os.environ.get('TIMEOUT', "6000"))
     }

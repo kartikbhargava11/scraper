@@ -23,11 +23,6 @@ from crawl4ai.user_agent_generator import UserAgentGenerator
 
 load_dotenv()
 
-HEADERS = { # browser identity
-	'Accept-Language': 'en-US',
-	'Content-Type': 'text/html'
-}
-
 ua_generator = UserAgentGenerator()
 
 human_behavior_script_one = """
@@ -120,8 +115,8 @@ def load_proxies_from_env():
 _base_browser_config = BrowserConfig(
 	headless=True,
 	user_agent=ua_generator.generate(os_type="windows", device_type="desktop", browser_type="chrome"),
-	viewport_width=1200,
-    viewport_height=800,
+	viewport_width=1280,
+    viewport_height=950,
 	extra_args=[
 		"--disable-extensions",
 		"--disable-gpu",  # Disable GPU acceleration
@@ -131,16 +126,21 @@ _base_browser_config = BrowserConfig(
 	text_mode=False,
 	avoid_css=True,
 	avoid_ads=True,
+	headers={
+		'Accept-Language': os.environ.get('LOCALE', 'en-IN'),
+		'Content-Type': 'text/html'
+	},
 )
 
 _base_crawler_run_config = CrawlerRunConfig(
-	locale="en-US", # Great for accessing region-specific content or testing global behavior.
-	timezone_id="America/Los_Angeles",
+	locale=os.environ.get('LOCALE', 'en-IN'), # Great for accessing region-specific content or testing global behavior.
+	timezone_id=os.environ.get('TIMEZONE', 'Asia/Kolkata'),
 	geolocation=GeolocationConfig(
-		latitude=34.0522,
-		longitude=-118.2437,
-		accuracy=10.0
+		latitude=os.environ.get('LAT', 28.6448),
+		longitude=os.environ.get('LONG', 77.2167),
+		accuracy=25.0
 	),
+	wait_until='networkidle',
 	only_text=False,
 	excluded_selector="#ads, .tracker, _csrf",
 	prefetch=False,
@@ -154,7 +154,10 @@ _base_crawler_run_config = CrawlerRunConfig(
 
 _base_http_crawl_config = HTTPCrawlerConfig(
 	method="GET",
-	headers=HEADERS,
+	headers={
+		'Accept-Language': os.environ.get('LOCALE', 'en-IN'),
+		'Content-Type': 'text/html'
+	},
 	verify_ssl=True,
 	follow_redirects=True,
 )
@@ -188,11 +191,6 @@ async def _run_crawler(url, browser_config=None, run_config=None, crawler_strate
 					config=run_config or _base_crawler_run_config,
 				):
 					print(f"Found {len(result.links['internal'])} internal links")
-					# if not result.success:
-					# 	_extract_failures(result, mode)
-					# else:
-					# 	# extracting links from the result (instance of the CrawlerResult class)
-					# 	_extract_links_and_depth(result)
 					return []
 			else:
 				# run the crawler on a URL without Stream Mode
@@ -274,12 +272,12 @@ async def _get_links_using_bfs(url, max_depth=1, max_pages=1):
 	
 	return process_crawl_result(results)
 
-
 async def _get_links_using_prefetch_mode(url):
-	run_config = CrawlerRunConfig(
-		prefetch=True
+	run_config = _base_crawler_run_config.clone(
+		prefetch=True,
+		enable_stealth=True,
 	)
-	async with AsyncWebCrawler() as crawler:
+	async with AsyncWebCrawler(config=_base_browser_config) as crawler:
 		result = await crawler.arun(url, config=run_config)
 	
 	return {
@@ -293,15 +291,11 @@ async def _get_links_using_prefetch_mode(url):
 
 async def _run_crawler_to_scrape_html(url, browser_config=None, run_config=None, crawler_strategy=None):
 	try:
-		async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config or _base_browser_config) as crawler:
+		async with AsyncWebCrawler(crawler_strategy=crawler_strategy, config=browser_config) as crawler:
 			result = await crawler.arun(
 				url,
-				config=run_config or _base_crawler_run_config
+				config=run_config
 			)
-			if result.success:
-				print(f"result.success: {result.success}")
-				print(f"result.status_code: {result.status_code}")
-			
 			return result
 	except Exception as e:
 		print("EXCEPTION RAISED")
@@ -328,12 +322,10 @@ async def _scrape_content(url):
 
 		stealth_run_config = _base_crawler_run_config.clone(
 			js_code=human_behavior_script_one,
-			wait_until="networkidle",
 			magic=True,
 			override_navigator=True,
 			simulate_user=True,
 			delay_before_return_html=3.0,  # Additional delay
-			# fallback_fetch_function=external_fetch
 			max_retries=0,
 			proxy_config=proxies if len(proxies) == 2 else None,
 			proxy_rotation_strategy=proxies if len(proxies) > 2 else None
@@ -349,18 +341,16 @@ async def _scrape_content(url):
 			undetected_browser_config = _base_browser_config.clone(
 				enable_stealth=True,
 				viewport_width=1920,
-				viewport_height=1080,
+				viewport_height=1080
 			)
 
 			undetected_run_config = _base_crawler_run_config.clone(
 				js_code=human_behavior_script_two,
-				wait_until="networkidle",
 				magic=True,
-				only_text=False,
-				simulate_user=True,
 				override_navigator=True,
+				simulate_user=True,
 				delay_before_return_html=5.0,  # Additional delay
-				fallback_fetch_function=external_fetch
+				fallback_fetch_function=external_fetch # fallback function (firecrawl)
 			)
 
 			undetected_crawler_strategy = _get_playwright_crawl_strategy(
@@ -388,9 +378,4 @@ if __name__ == "__main__":
 	result = asyncio.run(_get_links_using_prefetch_mode(url))
 	
 	print(result)
-
-
-
-
-
     

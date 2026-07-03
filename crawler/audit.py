@@ -111,11 +111,11 @@ _base_browser_config = BrowserConfig(
 
 
 _base_crawler_run_config = CrawlerRunConfig(
-	locale="nl-NL", # Great for accessing region-specific content or testing global behavior.
-	timezone_id="Europe/Amsterdam",
+	locale=os.environ.get('LOCALE', 'en-IN'), # Great for accessing region-specific content or testing global behavior.
+	timezone_id=os.environ.get('TIMEZONE', 'Asia/Kolkata'),
 	geolocation=GeolocationConfig(
-		latitude=52.3702,
-		longitude=4.89517,
+		latitude=os.environ.get('LAT', 28.6448),
+		longitude=os.environ.get('LONG', 77.2167),
 		accuracy=25.0
 	),
 	override_navigator=True,
@@ -306,9 +306,9 @@ async def _scrape_html_bulk(urls):
 if __name__ == "__main__":
 	print("Running...")
 	urls = [
-		{"url_id": 1, "url_address": "https://robyns.be/nl",},
-		{"url_id": 2, "url_address": "https://curlystuff.nl/krullen-sale/",},
-		{"url_id": 3, "url_address": "https://curlystuff.nl/product/satijnen-beannie-beige/",}
+		{"url_id": 1, "url_address": "https://www.finassverzekert.nl/fr/assurer-lamborghini",},
+		{"url_id": 2, "url_address": "https://www.finassverzekert.nl/en/cloverleaf",},
+		{"url_id": 3, "url_address": "https://www.finassverzekert.nl/en/insurance-quad-700cc",}
 	]
 	
 	result = asyncio.run(_scrape_html_bulk(urls))
