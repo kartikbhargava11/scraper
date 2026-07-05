@@ -8,8 +8,9 @@ main {
     flex: 1;
 }
 
-#main-content {
-    background-color: #F7F7F7;
+section#main-content {
+    background-color: #F9F9F9;
+    min-height: 80vh;
 }
 
 .external a {

@@ -75,8 +75,6 @@ def create_app(test_config=None) -> Flask:
     from . import crawl
     app.register_blueprint(crawl.bp)
 
-    from . import extract
-    app.register_blueprint(extract.bp)
 
     app.add_url_rule('/', endpoint='index')
 

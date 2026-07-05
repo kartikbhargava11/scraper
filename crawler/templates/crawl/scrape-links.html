@@ -2,8 +2,8 @@
 
 
 {% block content %}
-  <h1 class="text-center fs-3 font-monospace">{% block title %}Deep Crawling{% endblock %}</h1>
-  <h2 class="text-center fs-5 fw-light">Explore a website beyond a single page and explore all links at one depth before moving deeper</h2>
+  <h1 class="text-center fs-2 fw-bold text-uppercase">{% block title %}Deep Crawling{% endblock %}</h1>
+  <h2 class="text-center fs-5 fw-light mb-5">Explore a website beyond a single page and explore all links at one depth before moving deeper</h2>
   <div class="row">
     <div class="col-lg-6 offset-lg-3">
       <form method="post">
@@ -21,9 +21,8 @@
         </div>
         <div class="form-floating mb-3">
           <select class="form-select" id="job-type" name="job-type" aria-label="Select Job Type">
-            <option selected value="DEEP_CRAWLING_FAST">Use Fast Prefetch</option>
-            <option value="DEEP_CRAWLING">Use Deep Crawl</option>
-            <option value="FIRECRAWL_MAP">Use Map</option>
+            <option selected value="DEEP_CRAWLING">Use Deep Crawl</option>
+            <option disabled value="FIRECRAWL_MAP">Use Map (COMING SOON)</option>
           </select>
           <label for="job-type">Max Pages</label>
         </div>

@@ -2,8 +2,8 @@ import asyncio
 # import redis.asyncio as redis
 from crawl4ai import AsyncWebCrawler
 
-from crawler.crawl_config import (
-	lmxl_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy, get_http_crawl_strategy, external_fetch
+from crawl_config import (
+	lmxl_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy, get_http_crawl_strategy, external_fetch, get_keyword_scorer
 )
 
 async def run_crawler(url, browser_config=None, run_config=None, crawler_strategy=None):
@@ -51,7 +51,8 @@ def process_crawl_result(results):
 			"success": result.success, # first response
 			"redirected_status_code": result.redirected_status_code, # final redirect destination
 			"number_of_images": len(result.media.get("images", [])),
-			"number_of_internal_links": len(result.links.get("internal", []))
+			"number_of_internal_links": len(result.links.get("internal", [])),
+			"keyword_relevance_score": result.metadata.get('score', None)
 		})
 
 	return pages_by_depth
@@ -65,7 +66,11 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 		deep_crawl_strategy=get_bfs_crawl_strategy(
 			max_depth=max_depth,
 			max_pages=max_pages,
-			filter_chain=get_crawling_filter_chain(url)
+			filter_chain=get_crawling_filter_chain(
+				url,
+				query="A computer hardware or a peripheral"
+			),
+			url_scorer=get_keyword_scorer()
 		),
 		magic=True,
 		scraping_strategy=lmxl_scraping_strategy,
@@ -163,8 +168,6 @@ async def scrape_content(url):
 		if not result.success:
 			undetected_browser_config = base_browser_config.clone(
 				enable_stealth=True,
-				viewport_width=1920,
-				viewport_height=1080
 			)
 
 			undetected_run_config = base_crawler_run_config.clone(
@@ -199,7 +202,7 @@ if __name__ == "__main__":
 	
 	# result = asyncio.run(scrape_content(url))
 
-	results = asyncio.run(get_links_using_bfs(url, max_depth=5, max_pages=30))
+	results = asyncio.run(get_links_using_bfs(url, max_depth=2, max_pages=10))
 	
 	
 	print(results)

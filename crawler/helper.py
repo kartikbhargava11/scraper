@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 
 # importing functions that handle crawling
 from crawler.deep_crawling import get_links_using_bfs, scrape_content, get_links_using_prefetch_mode
-from crawler.audit import scrape_html_bulk
 
 load_dotenv()
 
@@ -36,8 +35,7 @@ def is_valid_range(num, max=5):
         return num
     return None
 
-async def crawl_bulk(urls):
-    return await scrape_html_bulk(urls)
+
 
 async def prefetch_links(url):
     return await get_links_using_prefetch_mode(url)

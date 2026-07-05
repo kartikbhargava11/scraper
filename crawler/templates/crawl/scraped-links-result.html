@@ -8,18 +8,12 @@
     <form>
       <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
     </form>
-    <form>
-      <input type="submit" class="btn btn-outline-primary rounded-0" value="Crawl Again">
-    </form>
   
-  
-    <form method="POST" action="{{url_for('crawl.scrape_markup_bulk', job_id=job_id)}}">
-      <input type="submit" class="btn btn-success rounded-0" value="Fetch Markups [ALL]">
-    </form>
+
   
 
     <form method="POST" action="{{url_for('crawl.delete_job', job_id=job_id)}}">
-      <input type="submit" class="btn btn-danger rounded-0" value="Delete [ALL]">
+      <input type="submit" class="btn btn-outline-danger rounded-0" value="Delete [ALL]">
     </form>
     
   </div>
@@ -29,7 +23,9 @@
       <th scope="col">JOB ID</th>
       <th scope="col">WEBSITE ID</th>
       <th scope="col">WEBSITE URL</th>
-      
+      <th scope="col">MAX DEPTH</th>
+      <th scope="col">MAX PAGES</th>
+      <th scope="col">TIME(sec.)</th>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -43,11 +39,20 @@
         <td class="external">
           <a class="fs-6 fw-light" href="{{ row['website_url'] }}" target="_blank" rel="nofollow">{{ row['website_url'] }}</a>
         </td>
+        <td>
+          {{row['max_depth']}}
+        </td>
+        <td>
+          {{row['max_pages']}}
+        </td>
+        <td>
+          {{row['diff_seconds']}}
+        </td>
       </tr>
 
       {% if row['links'] %}
       <tr>
-        <td colspan="3">
+        <td colspan="6">
             <table class="table table-sm table-bordered table-responsive">
               <thead>
                 <th scope="col">ID</th>
@@ -76,7 +81,9 @@
                     {{ link['page_description'] }}
                   </td>
                   <td>
-                    {{ link['status_code'] }}
+                    <div class="badge {{ 'text-bg-success' if link['status_code'] == 200 else ('text-bg-warning' if link['status_code'] in (301, 302, 304, 307, 308) else 'text-bg-danger') }}">
+                      {{ link['status_code'] }}
+                    </div>
                   </td>
                 </tr>
                 {% endfor %}

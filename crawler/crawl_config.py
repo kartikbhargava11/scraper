@@ -13,7 +13,7 @@ from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, Crawle
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 # helps narrow down which pages to crawl. FilterChain combines multiple filters
-from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, DomainFilter, ContentTypeFilter, ContentRelevanceFilter
+from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, DomainFilter, ContentTypeFilter, ContentRelevanceFilter, SEOFilter
 
 # Scorers assign priority values to discovered URLs, helping the crawler focus on the most relevant content first.
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
@@ -40,9 +40,19 @@ lmxl_scraping_strategy = LXMLWebScrapingStrategy()
 
 undetected_adapter = UndetectedAdapter()
 
+class Specs(BaseModel):
+	category: str
+	value: str
+
 class Product(BaseModel):
 	name: str
+	description: str
 	price: str
+	brand: str
+	product_code: str
+	availability: str
+	specs: List[Specs]
+
 
 
 # using BrowserConfig for global settings about the browser’s environment.
@@ -69,6 +79,7 @@ base_crawler_run_config = CrawlerRunConfig(
 		longitude=77.2167,
 		accuracy=25.0
 	),
+	page_timeout=240000,
 	override_navigator=True,
 	wait_until="load",
 	cache_mode=CacheMode.BYPASS,
@@ -162,14 +173,15 @@ def get_crawling_filter_chain(url, query=None):
 	initial_domain = url.split("/")[2]
 
 	filter_chain = [
-		# only crawl specific domains
-		# domain boundaries
+		
+		# Controls which domains to include or exclude
 		DomainFilter(
 			allowed_domains=[initial_domain],
 			# blocked_domains=[""]
 		),
 
 		# urls patterns to exclude
+		# matches URL patterns using wildcard syntax
 		URLPatternFilter(patterns=["*logout*", "*login*", "*account*", "*dashboard*", "*register*", "*cart*", "*[?]*"], reverse=True),
 
 
@@ -178,20 +190,31 @@ def get_crawling_filter_chain(url, query=None):
 	]
 
 	if query:
+		# Uses similarity to a text query
+		# This filter: - Measures semantic similarity between query and page content - It's a BM25-based relevance filter using head section content
+
 		filter_chain.append(
 			ContentRelevanceFilter(
 				query=query,
-				threshold=0.7
+				threshold=0.5 # Minimum similarity score (0.0 to 1.0)
 			)
 		)
+
+		# evaluates SEO elements (meta tags, headers, etc.)
+		# filter_chain.append(
+		# 	SEOFilter(
+		# 		threshold=0.5,
+		# 		keywords=["computer", "network", "graphic", "ram", "hardware", "printer", "speaker", "router"]
+		# 	)
+		# )
 
 	return FilterChain(filter_chain)
 
 def get_keyword_scorer():
 	# Create a relevance scorer
-    keyword_scorer = KeywordRelevanceScorer(
-        keywords=["crawl", "example", "async", "configuration"],
-        weight=0.7
+    return KeywordRelevanceScorer(
+        keywords=["product", "catalog", "configuration", "computer", "network", "graphic", "ram", "hardware", "printer", "speaker", "router", "peripheral", "printer", "cpu", "case", "usb", "hard disk", "hard drive", "pen drive", "ssd", "graphic card", "laptop", "screen", "cooler", "webcam", "video", "projector"],
+        weight=0.5
     )
 
 
@@ -202,6 +225,7 @@ def get_bfs_crawl_strategy(max_depth, filter_chain=None, max_pages=None, url_sco
 		filter_chain=filter_chain if filter_chain else FilterChain(),
 		url_scorer=url_scorer,	
 		max_pages=max_pages, # max number of pages to crawl
+		score_threshold=0.3
 	)
 
 # last resort: fetch HTML via an external service

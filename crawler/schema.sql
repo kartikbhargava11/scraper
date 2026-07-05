@@ -46,61 +46,43 @@ CREATE TABLE internal_url (
     status_code INTEGER,
     redirected_status_code INTEGER,
     page_description TEXT,
+    llm_description TEXT,
     page_title TEXT,
     number_of_images INTEGER,
     number_of_internal_links INTEGER,
-
+    keyword_relevance_score INTEGER,
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
     FOREIGN KEY (website_id) REFERENCES website (website_id)
 );
 
-CREATE TABLE markup (
-    markup_id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE item (
+    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
     url_id INTEGER,
     website_id INTEGER,
-    job_id INTEGER NOT NULL,
-
-    redirected_status_code INTEGER,
-    crawling_error_message TEXT,
-    html TEXT,
-    final_crawled_url TEXT,
-    status_code INTEGER,
-
-    FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
+    name TEXT,
+    description TEXT,
+    price INTEGER,
+    brand TEXT,
+    product_code TEXT,
+    availability TEXT,
+    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
     FOREIGN KEY (website_id) REFERENCES website (website_id),
-    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE
-
-    CHECK(website_id IS NOT NULL OR url_id IS NOT NULL)
+    FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
+    CHECK(url_id IS NOT NULL or website_id IS NOT NULL)
 );
 
-CREATE TABLE title_tag (
-    title_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    markup_id INTEGER NOT NULL,
-    FOREIGN KEY (markup_id) REFERENCES markup (markup_id) ON DELETE CASCADE
+CREATE TABLE specification (
+    specification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    category_name TEXT,
+    category_value TEXT,
+    FOREIGN KEY (item_id) REFERENCES item (item_id)
 );
 
-CREATE TABLE h1_tag (
-    h1_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    h1 TEXT NOT NULL,
-    markup_id INTEGER NOT NULL,
-    FOREIGN KEY (markup_id) REFERENCES markup (markup_id) ON DELETE CASCADE
-);
 
-CREATE TABLE h2_tag (
-    h2_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    h2 TEXT NOT NULL,
-    markup_id INTEGER NOT NULL,
-    FOREIGN KEY (markup_id) REFERENCES markup (markup_id) ON DELETE CASCADE
-);
 
-CREATE TABLE img_alt_tag (
-    img_alt_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    alt_text TEXT DEFAULT NULL,
-    img_tag TEXT NOT NULL,
-    markup_id INTEGER NOT NULL,
-    FOREIGN KEY (markup_id) REFERENCES markup (markup_id) ON DELETE CASCADE
-);
+
 
 
 

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-  <h1 class="text-center fs-2 mb-4">{% block title %}Check Jobs{% endblock %}</h1>
+  <h1 class="text-center fs-2 mb-5 fw-bold text-uppercase">{% block title %}Check Jobs{% endblock %}</h1>
 
   <div class="row g-4">
     {% if rows | length == 0 %}
@@ -14,12 +14,9 @@
     {% for row in rows %}
       <div class="col-lg-4 col-md-6">
         <div class="card h-100 border-0 shadow-sm">
-          <!-- <div class="progress rounded-0">
-              <div class="progress-bar progress-bar-stripped bg-success" role="progressbar" style="width: 100%" aria-valuenow="{{ 100 if row['job_status'] == ('FAILURE','SUCCESS') else 25 }}" aria-valuemin="0" aria-valuemax="100"></div>
-          </div> -->
           <div class="card-body">
             <h5>
-              <span class="badge {{ 'bg-success' if row['job_status'] == 'SUCCESS' else ('bg-warning' if row['job_status'] == 'STARTED' or row['job_status'] == 'PENDING' else 'bg-danger') }}">
+              <span class="badge {{ 'bg-success' if row['job_status'] == 'SUCCESS' else ('bg-danger' if row['job_status'] == 'FAILURE' else 'bg-warning') }}">
                 {{row['job_status']}}
               </span>
             </h5>
@@ -89,21 +86,10 @@
           </ul>
           <div class="card-body">
             {% if row['job_status'] == 'SUCCESS' %}
-              {% if row['job_type'] == 'SCRAPE_MARKUP' %}
-                <a href="{{url_for('crawl.view_scraped_markup', job_id=row['job_id'] )}}" class="btn btn-outline-dark rounded-0">View Markup</a>
-
-              {% elif row['job_type'] == 'SCRAPE_MARKUP_BULK' %}
-                  <a href="{{url_for('crawl.view_scraped_content_for_bulk_scrape', job_id=row['job_id'] )}}" class="btn btn-outline-primary">View Markup [BULK]</a>
-              
-              {% else %}
                 <a href="{{url_for('crawl.get_scraped_links', job_id=row['job_id'])}}" class="btn btn-dark rounded-0">View Links</a>
-              {% endif %}
 
             {% elif row['job_status'] == 'PENDING' or row['job_status'] == 'STARTED' %}
-              <a aria-expanded="true" class="btn btn-secondary rounded-0">Processing....</a>
-
-            {% else %}
-              <a href="{{url_for('crawl.view_scraped_markup', job_id=row['job_id'])}}" class="btn btn-outline-danger rounded-0">Troubleshoot</a>
+              <a aria-disabled="true" class="btn btn-secondary rounded-0">Processing....</a>
             {% endif %}
           </div>
         </div>
