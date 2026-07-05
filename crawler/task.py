@@ -88,30 +88,18 @@ def scrape_markup_bulk_task(self, job_id, _job_id):
             raise
 
 @celery_global_instance.task(bind=True, ignore_result=False)
-def scrape_markup_task(self, job_id):
+def scrape_markup_task(self, job_id, markup_id, url):
     from crawler import create_app
     flask_app = create_app()
 
     with flask_app.app_context():
         db = get_db()
 
-        job = db.execute(
-            """
-            SELECT i.url_id, i.url_address
-            FROM markup m
-            INNER JOIN internal_url i ON i.url_id = m.url_id
-            WHERE m.job_id = ?
-            """,
-            (job_id,)
-        ).fetchone()
-
-        if not job:
-            return None
         
         mark_crawl_job_started(db, self.request.id, job_id)
 
         try:
-            result = asyncio.run(scrape_html(job['url_address']))
+            result = asyncio.run(scrape_html(url))
             
             # try:
             #     # Check if an event loop is already assigned to this worker thread
@@ -132,7 +120,7 @@ def scrape_markup_task(self, job_id):
                 final_crawled_url = ?,
                 redirected_status_code = ?,
                 crawling_error_message = ?
-                WHERE job_id = ?
+                WHERE job_id = ? AND markup_id = ?
                 """,
                 (
                     result['html'],
@@ -140,7 +128,8 @@ def scrape_markup_task(self, job_id):
                     result['final_crawled_url'],
                     result['redirected_status_code'],
                     result['crawling_error_message'],
-                    job_id
+                    job_id,
+                    markup_id
                 )
             )
             db.commit()
@@ -148,11 +137,11 @@ def scrape_markup_task(self, job_id):
             if not result['html']:
                 raise NO_HTML
             
-            save_html_tags(db, result['html'], job['url_id'])
+            save_html_tags(db, result['html'], markup_id)
             
             mark_crawl_job_success(db, job_id)
 
-        except (CRAWL_FAILED, NO_HTML) as e:
+        except NO_HTML as e:
             mark_crawl_job_failure(db, e.log_message, job_id)
             raise # re-raise the original error so celery also knows the task failed
 
@@ -163,42 +152,28 @@ def scrape_markup_task(self, job_id):
 
 
 @celery_global_instance.task(bind=True, ignore_result=False)
-def scrape_links_task(self, job_id):
+def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pages):
     from crawler import create_app
 
     flask_app = create_app()
     with flask_app.app_context():
         db = get_db()
         rows = []
-
-        job = db.execute(
-            """
-            SELECT j.job_id, j.job_type, w.website_id, w.website_url
-            FROM crawl_job j
-            INNER JOIN website w ON w.job_id = j.job_id
-            WHERE j.job_id = ?
-            """,
-            (job_id,)
-        ).fetchone()
-
-        if not job:
-            return []
-
         
         mark_crawl_job_started(db, self.request.id, job_id)
 
         try:
-            if job['job_type'] == 'FIRECRAWL_MAP':
+            if job_type == 'FIRECRAWL_MAP':
                 # firecrawl service
-                links = call_firecrawl_map(job['website_url'])
-                for link in links:
-                    if link.get('url'):
-                        rows.append(
-                            (link['url'], job['job_id'])
-                        )
+                links = call_firecrawl_map(url)
+                # for link in links:
+                #     if link.get('url'):
+                #         rows.append(
+                #             (link['url'], None, job_id, website_id)
+                #         )
             else:
                 # crawl4AI
-                # celery tasks run synchronously. We bridge into the async engine using asyncio to host crawl4ai 
+                # celery tasks run synchronously. We bridge into the async engine using asyncio to host crawl4ai
                 try:
                     # Check if an event loop is already assigned to this worker thread
                     loop = asyncio.get_event_loop()
@@ -208,31 +183,44 @@ def scrape_links_task(self, job_id):
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
-                    
                 # Run your async function to completion inside the safe loop
 
-                if job['job_type'] == 'DEEP_CRAWLING':
-                    response = loop.run_until_complete(bfs(job['website_url']))
-                    for res in response:
-                        if res['success']:
-                            for link in res['links']:
-                                rows.append((link['href'], job['job_id']))
+                if job_type == 'DEEP_CRAWLING':
+                    response = loop.run_until_complete(bfs(url, max_depth, max_pages))
+                    for depth, results in response.items():
+                        for result in results:
+                            rows.append((
+                                result['url'],
+                                result['page_title'],
+                                result['page_description'],
+                                result['number_of_images'],
+                                result['number_of_internal_links'],
+                                result['status_code'],
+                                result['redirected_status_code'],
+                                result['error_message'],
+                                depth,
+                                job_id,
+                                website_id
+                            ))
 
-                elif job['job_type'] == 'DEEP_CRAWLING_FAST':
-                    response = loop.run_until_complete(prefetch_links(job['website_url']))
+                # prefetch mode - quickly discover URLs without full page processing.   
+                elif job_type == 'DEEP_CRAWLING_FAST':
+                    response = loop.run_until_complete(prefetch_links(url))
 
-                    if response['success']:
-                        for link in response['links']:
-                            rows.append((link['href'], job['job_id']))
-                    else:
-                        raise CRAWL_FAILED(
-                            log_message=response['error_message']
-                        )
+                    # if response['success']:
+                    #     for link in response['links']:
+                    #         rows.append((link['href'], None, job_id, website_id))
+                
+                # if no URLs were extracted
+                if len(rows) == 0:
+                    raise CRAWL_FAILED(
+                        log_message="No URLs Found, Due to Crawling Failures"
+                    )
 
             db.executemany(
                 """
-                INSERT INTO internal_url (url_address, job_id)
-                VALUES (?, ?)
+                INSERT INTO internal_url (url_address, page_title, page_description, number_of_images, number_of_internal_links, status_code, redirected_status_code, error_message, depth, job_id, website_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows
             )
@@ -244,3 +232,15 @@ def scrape_links_task(self, job_id):
             mark_crawl_job_failure(db, str(e), job_id)
             raise
 
+
+@celery_global_instance.task(bind=True, ignore_result=False)
+def extract_computer_hardware_info_task(self, job_id):
+    from crawler import create_app
+
+    flask_app = create_app()
+    with flask_app.app_context():
+        db = get_db()
+
+        mark_crawl_job_started(db, self.request.id, job_id)
+
+        

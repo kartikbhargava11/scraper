@@ -42,9 +42,9 @@ async def crawl_bulk(urls):
 async def prefetch_links(url):
     return await get_links_using_prefetch_mode(url)
 
-async def bfs(url):
+async def bfs(url, max_depth, max_pages):
     # function returns all the internal links & their depth in the given URL 
-    return await get_links_using_bfs(url)
+    return await get_links_using_bfs(url, max_depth, max_pages)
 
 async def scrape_html(url):
     # function returns the scraped HTML markup
@@ -59,7 +59,7 @@ def call_firecrawl_map(url):
         "ignoreCache": True,
         "limit": 5000,
         "location": {
-            "country": os.environ.get('COUNTRY', 'IND'),
+            "country": os.environ.get('COUNTRY', 'IN'),
             "languages": [os.environ.get('LOACALE', 'en-IN')]
         },
         "timeout": int(os.environ.get('TIMEOUT', "6000"))
@@ -88,18 +88,18 @@ def call_firecrawl_map(url):
     
     return data.get("links", [])
 
-def create_website(db, url, job_id):
+def create_website(db, url, job_id, max_depth=None, max_pages=None):
     cur = db.execute(
-        'INSERT INTO website (website_url, job_id) VALUES (?, ?)',
-        (url, job_id)
+        'INSERT INTO website (website_url, job_id, max_depth, max_pages) VALUES (?, ?, ?, ?)',
+        (url, job_id, max_depth, max_pages)
     )
 
     return cur.lastrowid
 
-def create_markup(db, url_id, job_id):
+def create_markup(db, job_id, url_id=None, website_id=None):
     cur = db.execute(
-        'INSERT INTO markup (url_id, job_id) VALUES (?, ?)',
-        (url_id, job_id)
+        'INSERT INTO markup (url_id, job_id, website_id) VALUES (?, ?, ?)',
+        (url_id, job_id, website_id)
     )
 
     return cur.lastrowid
@@ -114,15 +114,6 @@ def create_crawl_job(db, job_type):
     )
     return cur.lastrowid
 
-def create_url_address(db, url, job_id):
-    cur = db.execute(
-        """
-        INSERT INTO internal_url (url_address, job_id)
-        VALUES (?,?)
-        """,
-        (url, job_id)
-    )
-    return cur.lastrowid
 
 def mark_crawl_job_started(db, task_id, job_id):
     status = os.environ.get('CODE_STARTED', 'STARTED')
@@ -158,6 +149,17 @@ def mark_crawl_job_failure(db, error_message, job_id):
     WHERE job_id = ?
     """,
     (status, error_message, job_id)
+    )
+    db.commit()
+
+def assign_celery_task_id_to_crawl_job(db, task_id, job_id):
+    db.execute(
+        """
+        UPDATE crawl_job
+        SET task_id = ?
+        WHERE job_id = ?
+        """,
+        (task_id, job_id)
     )
     db.commit()
 
@@ -262,7 +264,21 @@ def data_sanity_checks(url='', max_pages=10, max_depth=5):
     return error
 
 
-def save_html_tags(db, html, url_id):
+def check_url(url):
+    error = None
+    try:
+        valid_url = url.strip() if is_valid_url(url) else None
+        if not valid_url:
+            raise UrlError
+    except UrlError:
+        error = "Invalid URL Entered"
+    except Exception:
+        error = "Misc Error"
+    return error
+        
+
+
+def save_html_tags(db, html, markup_id):
     soup = BeautifulSoup(html, 'html.parser')
 
     title = []
@@ -272,41 +288,41 @@ def save_html_tags(db, html, url_id):
 
     for tag in soup.find_all(['title', 'h1', 'h2', 'img']):
         if tag.name == 'title':
-            title.append((str(tag), url_id))
+            title.append((str(tag), markup_id))
         elif tag.name == 'h1':
-            headings1.append((str(tag), url_id))
+            headings1.append((str(tag), markup_id))
         elif tag.name == 'h2':
-            headings2.append((str(tag), url_id))
+            headings2.append((str(tag), markup_id))
         elif tag.name == 'img':
             if tag.has_attr('alt'):
-                alt.append((tag['alt'], str(tag), url_id))
+                alt.append((tag['alt'], str(tag), markup_id))
             else:
-                alt.append((None, str(tag), url_id))
+                alt.append((None, str(tag), markup_id))
     
     db.executemany(
         """
-        INSERT INTO title_tag (title, url_id)
+        INSERT INTO title_tag (title, markup_id)
         VALUES (?,?)
         """,
         title
     )
     db.executemany(
         """
-        INSERT INTO h1_tag (h1, url_id)
+        INSERT INTO h1_tag (h1, markup_id)
         VALUES (?,?)
         """,
         headings1
     )
     db.executemany(
         """
-        INSERT INTO h2_tag (h2, url_id)
+        INSERT INTO h2_tag (h2, markup_id)
         VALUES (?,?)
         """,
         headings2
     )
     db.executemany(
         """
-        INSERT INTO img_alt_tag (alt_text, img_tag, url_id)
+        INSERT INTO img_alt_tag (alt_text, img_tag, markup_id)
         VALUES (?,?,?)
         """,
         alt

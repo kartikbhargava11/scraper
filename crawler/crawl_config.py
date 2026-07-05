@@ -2,9 +2,29 @@ import os
 import json
 
 import aiohttp
-from crawl4ai import GeolocationConfig, PlaywrightAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig
+from crawl4ai import GeolocationConfig, PlaywrightAdapter, UndetectedAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig
+
 from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, CrawlerRunConfig
+
+# deep crawling can explore websites beyond a single page. 
+# It has control over website's depth and filter content too
+# The BFSDeepCrawlStrategy uses a breadth-first approach
+# exploring all links at one depth before moving deeper:
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+
+# helps narrow down which pages to crawl. FilterChain combines multiple filters
+from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, DomainFilter, ContentTypeFilter, ContentRelevanceFilter
+
+# Scorers assign priority values to discovered URLs, helping the crawler focus on the most relevant content first.
+from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
+
+# Added LXMLWebScrapingStrategy for faster HTML parsing using the lxml library. 
+# This can significantly improve scraping performance, especially for large or complex pages.
+from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+
+# helps rotating user agents
 from crawl4ai.user_agent_generator import UserAgentGenerator
+
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy, AsyncHTTPCrawlerStrategy
 from pydantic import BaseModel, Field
 from typing import List
@@ -14,6 +34,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ua_generator = UserAgentGenerator()
+
+
+lmxl_scraping_strategy = LXMLWebScrapingStrategy()
+
+undetected_adapter = UndetectedAdapter()
 
 class Product(BaseModel):
 	name: str
@@ -32,7 +57,7 @@ base_browser_config = BrowserConfig(
 	user_agent=ua_generator.generate(os_type="windows", device_type="desktop", browser_type="chrome"),
 	avoid_css=True,
 	avoid_ads=True,
-	use_persistent_context=True
+	max_pages_before_recycle=5,
 )
 
 
@@ -50,6 +75,9 @@ base_crawler_run_config = CrawlerRunConfig(
 	excluded_selector="#ads, .tracker, _csrf",
 	scan_full_page=True,
 	stream=False,
+	simulate_user=True,
+	prefetch=False,
+	exclude_external_images=True,
 	process_iframes=False,
 	remove_overlay_elements=True,
 	delay_before_return_html=2.0,
@@ -115,8 +143,10 @@ def load_proxies_from_env():
 # and complex interactions.
 def get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, text_mode=False):
 	return AsyncPlaywrightCrawlerStrategy(
-		browser_config=browser_config or base_browser_config,
-		browser_adapter=browser_adapter or PlaywrightAdapter(),
+		browser_config=browser_config if browser_config else base_browser_config,
+		browser_adapter=browser_adapter if browser_adapter else PlaywrightAdapter(),
+
+
 		# When text_mode=True, the crawler automatically: - Disables GPU processing. - Blocks image and JavaScript resources.
 		# Reduces the viewport size to 800x600 (can override this with viewport_width and viewport_height).
 		text_mode=text_mode
@@ -125,6 +155,53 @@ def get_playwright_crawl_strategy(browser_config=None, browser_adapter=None, tex
 def get_http_crawl_strategy():
 	return AsyncHTTPCrawlerStrategy(
 		browser_config=base_http_crawl_config
+	)
+
+def get_crawling_filter_chain(url, query=None):
+
+	initial_domain = url.split("/")[2]
+
+	filter_chain = [
+		# only crawl specific domains
+		# domain boundaries
+		DomainFilter(
+			allowed_domains=[initial_domain],
+			# blocked_domains=[""]
+		),
+
+		# urls patterns to exclude
+		URLPatternFilter(patterns=["*logout*", "*login*", "*account*", "*dashboard*", "*register*", "*cart*", "*[?]*"], reverse=True),
+
+
+		# content type filtering
+		ContentTypeFilter(allowed_types=["text/html"])
+	]
+
+	if query:
+		filter_chain.append(
+			ContentRelevanceFilter(
+				query=query,
+				threshold=0.7
+			)
+		)
+
+	return FilterChain(filter_chain)
+
+def get_keyword_scorer():
+	# Create a relevance scorer
+    keyword_scorer = KeywordRelevanceScorer(
+        keywords=["crawl", "example", "async", "configuration"],
+        weight=0.7
+    )
+
+
+def get_bfs_crawl_strategy(max_depth, filter_chain=None, max_pages=None, url_scorer=None):
+	return BFSDeepCrawlStrategy(
+		max_depth=max_depth, # number of levels to crawl beyond the starting page
+		include_external=False,
+		filter_chain=filter_chain if filter_chain else FilterChain(),
+		url_scorer=url_scorer,	
+		max_pages=max_pages, # max number of pages to crawl
 	)
 
 # last resort: fetch HTML via an external service

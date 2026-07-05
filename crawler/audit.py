@@ -1,8 +1,8 @@
 import asyncio
 
-from crawl4ai import AsyncWebCrawler, UndetectedAdapter, RoundRobinProxyStrategy
+from crawl4ai import AsyncWebCrawler, UndetectedAdapter
 
-from crawl_config import *
+from crawler.crawl_config import *
 
 
 async def run_crawler_batch(urls, browser_config=None, run_config=None, crawler_strategy=None, dispatcher=None):
@@ -23,7 +23,7 @@ async def run_crawler_batch(urls, browser_config=None, run_config=None, crawler_
 					"redirected_status_code": result.redirected_status_code,
 					"final_crawled_url": result.url,
 					"status_code": result.status_code,
-					"html": len(result.cleaned_html) if result.success else None,
+					"html": result.cleaned_html if result.success else None,
 					"crawling_error_message": result.error_message,
 					"success": result.success,	
 				}
@@ -152,7 +152,9 @@ async def run_crawler_to_extract_product(url, browser_config=None, run_config=No
 async def extract_product(url):
 
 	llm_run_config = base_crawler_run_config.clone(
-		extraction_strategy=base_llm_strategy
+		extraction_strategy=base_llm_strategy,
+		proxy_config=None,
+		proxy_rotation_strategy=None
 	)
 
 	await run_crawler_to_extract_product(

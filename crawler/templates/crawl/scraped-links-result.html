@@ -23,61 +23,78 @@
     </form>
     
   </div>
-  <table class="table table-striped">
+  <table class="table table-responsive">
+    <caption>List of URLs</caption>
     <thead>
-      <th scope="col">#</th>
-      <th scope="col">Job ID</th>
-      <th scope="col">URL ID</th>
-      <th scope="col">URL</th>
-      <th scope="col">Depth</th>
-      <th scope="col">Markup</th>
-      <th scope="col">Action</th>
+      <th scope="col">JOB ID</th>
+      <th scope="col">WEBSITE ID</th>
+      <th scope="col">WEBSITE URL</th>
+      
     </thead>
     <tbody>
-      {% for index in range(count) %}
+      {% for row in rows %}
       <tr>
-        <th scope="row">{{ index + 1 }}</th>
         <td>
-          {{rows[index]['job_id']}}
+          {{row['job_id']}}
         </td>
          <td>
-          {{rows[index]['url_id']}}
+          {{row['website_id']}}
         </td>
         <td class="external">
-          <a class="fs-6 fw-light" href="{{rows[index]['url_address']}}" target="_blank" rel="nofollow">{{rows[index]['url_address']}}</a>
-        </td>
-        <td>
-          {% if rows[index]['depth'] is not none %}
-            {{ rows[index]['depth'] }}
-          {% else %}
-            NA
-          {% endif %}
-        </td>
-        <td>
-          {% if rows[index]['markup_job_id'] %}
-          ✅
-          {% else %}
-          ❌
-          {% endif %}
-        </td>
-        <td>
-          {% if rows[index]['markup_job_id'] %}
-            <div class="d-grid">
-              <form method="POST" action="{{ url_for('crawl.view_scraped_markup', job_id=rows[index]['markup_job_id']) }}">
-                <input type="hidden" name="markup-id" value="{{rows[index]['markup_id']}}">
-                <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
-                <input type="submit" class="btn btn-success rounded-0" value="View Markup">
-              </form>
-          {% else %}
-            <form method="POST" action="{{ url_for('crawl.scrape_markup') }}">
-              <input type="hidden" name="url" value="{{rows[index]['url_address']}}">
-              <input type="hidden" name="url-id" value="{{rows[index]['url_id']}}">
-              <input type="submit" class="btn btn-outline-secondary rounded-0" value="Fetch Markup ⚡️">
-            </form>
-            </div>
-          {% endif %}
+          <a class="fs-6 fw-light" href="{{ row['website_url'] }}" target="_blank" rel="nofollow">{{ row['website_url'] }}</a>
         </td>
       </tr>
+
+      {% if row['links'] %}
+      <tr>
+        <td colspan="3">
+            <table class="table table-sm table-bordered table-responsive">
+              <thead>
+                <th scope="col">ID</th>
+                <th scope="col">LINK</th>
+                <th scope="col">DEPTH</th>
+                <th scope="col">TITLE</th>
+                <th scope="col">DESC</th>
+                <th scope="col">CODE</th>
+              </thead>
+              <tbody>
+                {% for link in row['links'] %}
+                <tr>
+                  <td>
+                    {{ link['url_id'] }}
+                  </td>
+                  <td class="external text-wrap">
+                    <a class="fs-6 fst-italic font-light fw-light" href="{{ link['url_address'] }}" target="_blank" rel="nofollow">{{ link['url_address'] }}</a>
+                  </td>
+                  <td>
+                    {{ link['depth'] }}
+                  </td>
+                  <td class="fw-light fst-italic fs-6">
+                    {{ link['page_title'] }}
+                  </td>
+                  <td class="fw-light fst-italic fs-6">
+                    {{ link['page_description'] }}
+                  </td>
+                  <td>
+                    {{ link['status_code'] }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="3">
+          <div class="fst-italic fw-light">
+            No Internal URLs
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+      
+
       {% endfor %}
     </tbody>
   </table>

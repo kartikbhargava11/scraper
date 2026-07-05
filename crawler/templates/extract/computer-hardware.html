@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="text-center fs-3 font-monospace">{% block title %}Extract Info about Computer Hardware{% endblock %}</h1>
+<h2 class="text-center fs-5 fw-light">Fetches fresh HTML from the URL provided below. Saves to info to the database after normalization and de-duplication</h2>
+<div class="row">
+    <div class="col-lg-6 offset-lg-3">
+        <form method="post">
+            <div class="form-floating mb-3">
+                <input required type="text" name="url" class="form-control" id="url" placeholder="https://example.com">
+                <label for="url" class="form-label">URL</label>
+            </div>
+            <div class="mb-3">
+                <div class="row">
+                    <div class="col-8 offset-2 d-grid gap-2">
+                        <button type="submit" class="btn btn-lg d-block btn-dark mb-3">Extract Info</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
