@@ -2,7 +2,7 @@ import asyncio
 # import redis.asyncio as redis
 from crawl4ai import AsyncWebCrawler
 
-from crawl_config import (
+from crawler.crawl_config import (
 	lmxl_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy, get_http_crawl_strategy, external_fetch, get_keyword_scorer
 )
 
@@ -66,11 +66,7 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 		deep_crawl_strategy=get_bfs_crawl_strategy(
 			max_depth=max_depth,
 			max_pages=max_pages,
-			filter_chain=get_crawling_filter_chain(
-				url,
-				query="A computer hardware or a peripheral"
-			),
-			url_scorer=get_keyword_scorer()
+			filter_chain=get_crawling_filter_chain(url),
 		),
 		magic=True,
 		scraping_strategy=lmxl_scraping_strategy,

@@ -168,7 +168,7 @@ def get_http_crawl_strategy():
 		browser_config=base_http_crawl_config
 	)
 
-def get_crawling_filter_chain(url, query=None):
+def get_crawling_filter_chain(url):
 
 	initial_domain = url.split("/")[2]
 
@@ -180,52 +180,32 @@ def get_crawling_filter_chain(url, query=None):
 			# blocked_domains=[""]
 		),
 
-		# urls patterns to exclude
 		# matches URL patterns using wildcard syntax
-		URLPatternFilter(patterns=["*logout*", "*login*", "*account*", "*dashboard*", "*register*", "*cart*", "*[?]*"], reverse=True),
+		URLPatternFilter(patterns=["*[?]*", "*account*", "*cart*"], reverse=True),
 
+		# matches URL patterns using wildcard syntax
+		URLPatternFilter(patterns=["*product*"]),
 
 		# content type filtering
 		ContentTypeFilter(allowed_types=["text/html"])
 	]
-
-	if query:
-		# Uses similarity to a text query
-		# This filter: - Measures semantic similarity between query and page content - It's a BM25-based relevance filter using head section content
-
-		filter_chain.append(
-			ContentRelevanceFilter(
-				query=query,
-				threshold=0.5 # Minimum similarity score (0.0 to 1.0)
-			)
-		)
-
-		# evaluates SEO elements (meta tags, headers, etc.)
-		# filter_chain.append(
-		# 	SEOFilter(
-		# 		threshold=0.5,
-		# 		keywords=["computer", "network", "graphic", "ram", "hardware", "printer", "speaker", "router"]
-		# 	)
-		# )
 
 	return FilterChain(filter_chain)
 
 def get_keyword_scorer():
 	# Create a relevance scorer
     return KeywordRelevanceScorer(
-        keywords=["product", "catalog", "configuration", "computer", "network", "graphic", "ram", "hardware", "printer", "speaker", "router", "peripheral", "printer", "cpu", "case", "usb", "hard disk", "hard drive", "pen drive", "ssd", "graphic card", "laptop", "screen", "cooler", "webcam", "video", "projector"],
+        keywords=[""],
         weight=0.5
     )
 
 
-def get_bfs_crawl_strategy(max_depth, filter_chain=None, max_pages=None, url_scorer=None):
+def get_bfs_crawl_strategy(max_depth, filter_chain=None, max_pages=None):
 	return BFSDeepCrawlStrategy(
 		max_depth=max_depth, # number of levels to crawl beyond the starting page
 		include_external=False,
 		filter_chain=filter_chain if filter_chain else FilterChain(),
-		url_scorer=url_scorer,	
 		max_pages=max_pages, # max number of pages to crawl
-		score_threshold=0.3
 	)
 
 # last resort: fetch HTML via an external service
