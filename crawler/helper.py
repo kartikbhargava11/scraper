@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 
 # importing functions that handle crawling
-from crawler.deep_crawling import get_links_using_bfs, scrape_content, get_links_using_prefetch_mode
+from crawler.deep_crawling import get_links_using_bfs, scrape_content, get_links_using_prefetch_mode, extract_product
 
 load_dotenv()
 
@@ -47,6 +47,10 @@ async def bfs(url, max_depth, max_pages):
 async def scrape_html(url):
     # function returns the scraped HTML markup
     return await scrape_content(url)
+
+async def scrape_product(url):
+    # function returns the scraped HTML markup
+    return await extract_product(url)
 
 def call_firecrawl_map(url):
     payload = {

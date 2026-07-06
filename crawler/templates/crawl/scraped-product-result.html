@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Result{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <h1 class="text-center fs-2 fw-bold text-uppercase">Products [{{ count }} Found]</h1>
+    <div class="d-flex gap-2 my-4">
+      <form>
+        <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
+      </form>
+      <form method="POST" action="{{url_for('crawl.delete_job', job_id=job_id)}}">
+        <input type="submit" class="btn btn-outline-danger rounded-0" value="Delete [ALL]">
+      </form>
+    </div>
+  </div>
+  {% for row in rows %}
+  <div class="col-12">
+    <table class="table table-responsive table-bordered caption-top">
+    <caption class="fw-light fst-italic fs-6">Extracted from <a href="{{ row['source_url'] }}" target="_blank" rel="nofollow">{{ row['source_url'] }}</a></caption>
+    <thead>
+      <th scope="col">ITEM_ID</th>
+      <th scope="col">NAME</th>
+      <th scope="col">DESC</th>
+      <th scope="col">PRICE</th>
+      <th scope="col">BRAND</th>
+      <th scope="col">PRODUCT_CODE</th>
+      <th scope="col">AVAILABILITY</th>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          {{ row['item_id'] }}
+        </td>
+        <td class="fw-light fst-italic fs-6">
+          {{ row['name'] }}
+        </td>
+        <td class="fw-light fst-italic fs-6">
+          {{ row['description'] }}
+        </td>
+        <td>
+          {{ row['price'] }}
+        </td>
+        <td>
+          {{ row['brand'] }}
+        </td>
+        <td>
+          {{ row['product_code'] }}
+        </td>
+        <td>
+          {{ row['availability'] }}
+        </td>
+      </tr>
+
+      {% if row['specs'] %}
+      <tr>
+        <td colspan="3">
+            <table class="table table-sm table-bordered table-responsive table-hover">
+              <thead>
+                <th scope="col">SPEC CATEGORY</th>
+                <th scope="col">SPEC</th>
+              </thead>
+              <tbody>
+                {% for spec in row['specs'] %}
+                <tr>
+                  <td>
+                    {{ spec['category_name'] }}
+                  </td>
+                  <td>
+                    {{ spec['category_value'] }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="3">
+          <div class="fst-italic fw-light">
+            No Specifications Found
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+      
+    </tbody>
+  </table>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

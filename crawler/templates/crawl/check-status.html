@@ -86,8 +86,11 @@
           </ul>
           <div class="card-body">
             {% if row['job_status'] == 'SUCCESS' %}
+              {% if row['job_type'] == 'EXTRACT' %}
+                <a href="{{url_for('crawl.get_scraped_computer_hardware', job_id=row['job_id'])}}" class="btn btn-outline-dark rounded-0">View Products</a>
+              {% else %}
                 <a href="{{url_for('crawl.get_scraped_links', job_id=row['job_id'])}}" class="btn btn-dark rounded-0">View Links</a>
-
+              {% endif %}
             {% elif row['job_status'] == 'PENDING' or row['job_status'] == 'STARTED' %}
               <a aria-disabled="true" class="btn btn-secondary rounded-0">Processing....</a>
             {% endif %}

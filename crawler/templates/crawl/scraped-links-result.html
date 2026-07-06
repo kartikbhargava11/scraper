@@ -2,21 +2,20 @@
 {% block title %}Result{% endblock %}
 
 {% block content %}
-  <h1 class="text-center fs-3 font-monospace">Internal Links [{{ count }} Found]</h1>
-  <h2 class="text-center fs-5 fw-light">Stay within the same domain (don't follow external links) - Each result contains metadata like the crawl depth - Results are returned as a list after all crawling is complete</h2>
-  <div class="d-flex gap-2 my-4">
-    <form>
-      <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
-    </form>
-  
-
-  
-
-    <form method="POST" action="{{url_for('crawl.delete_job', job_id=job_id)}}">
-      <input type="submit" class="btn btn-outline-danger rounded-0" value="Delete [ALL]">
-    </form>
-    
+<div class="row">
+  <div class="col-12">
+    <h1 class="text-center fs-2 fw-bold text-uppercase">Internal Links [{{ count }} Found]</h1>
+    <h2 class="text-center fs-5 fw-light mb-5">Stays within the same domain (don't follow external links) - Each result contains metadata - Results are returned below after all crawling is complete</h2>
+    <div class="d-flex gap-2 my-4">
+      <form>
+        <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
+      </form>
+      <form method="POST" action="{{url_for('crawl.delete_job', job_id=job_id)}}">
+        <input type="submit" class="btn btn-outline-danger rounded-0" value="Delete [ALL]">
+      </form>
+    </div>
   </div>
+  <div class="col-12">
   <table class="table table-responsive">
     <caption>List of URLs</caption>
     <thead>
@@ -61,6 +60,7 @@
                 <th scope="col">TITLE</th>
                 <th scope="col">DESC</th>
                 <th scope="col">CODE</th>
+                <th scope="col">Action</th>
               </thead>
               <tbody>
                 {% for link in row['links'] %}
@@ -85,6 +85,15 @@
                       {{ link['status_code'] }}
                     </div>
                   </td>
+                  <td>
+                    <form method="POST" action="{{url_for('crawl.scrape_hardware_info')}}">
+                      <input type="hidden" name="url" value="{{ link['url_address'] }}">
+                      <input type="hidden" name="url-id" value="{{ link['url_id'] }}">
+                      <input type="hidden" name="website-id" value="{{ row['website_id'] }}">
+                      <input type="hidden" name="source" value="internal">
+                      <input type="submit" class="btn btn-outline-dark rounded-0" value="Extract [Info]">
+                    </form>
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -100,9 +109,9 @@
         </td>
       </tr>
       {% endif %}
-      
-
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</div>
 {% endblock %}

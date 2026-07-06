@@ -9,7 +9,7 @@
       <form method="post">
         <div class="form-floating mb-3">
           <input required type="text" name="url" class="form-control" id="url" placeholder="https://example.com">
-          <label for="url" class="form-label">URL</label>
+          <label for="url" class="form-label">URL to Crawl</label>
         </div>
         <div class="form-floating mb-3">
           <input type="number" min="1" max="5" name="max-depth" class="form-control" id="max-depth" placeholder="Enter number between 1 and 5" value="5">
@@ -21,10 +21,11 @@
         </div>
         <div class="form-floating mb-3">
           <select class="form-select" id="job-type" name="job-type" aria-label="Select Job Type">
-            <option selected value="DEEP_CRAWLING">Use Deep Crawl</option>
-            <option disabled value="FIRECRAWL_MAP">Use Map (COMING SOON)</option>
+            <option selected value="DEEP_CRAWLING">Deep Crawling</option>
+            <option value="DEEP_CRAWLING">Prefetch (Fast)</option>
+            <option disabled value="FIRECRAWL_MAP">Map (COMING SOON)</option>
           </select>
-          <label for="job-type">Max Pages</label>
+          <label for="job-type">Crawl Strategy</label>
         </div>
         <div class="mb-3">
           <div class="row">

@@ -46,7 +46,7 @@ class Specs(BaseModel):
 
 class Product(BaseModel):
 	name: str
-	description: str
+	short_description: str
 	price: str
 	brand: str
 	product_code: str
@@ -54,6 +54,21 @@ class Product(BaseModel):
 	specs: List[Specs]
 
 
+base_llm_strategy = LLMExtractionStrategy(
+	llm_config=LLMConfig(
+		provider=os.environ.get('OPEN_AI_MODEL'),
+		api_token=os.environ.get('OPEN_AI_KEY'),
+		temperature=0.0,
+		max_tokens=1100,
+	),
+	apply_chunking=True,
+	schema=Product.model_json_schema(),
+	extraction_type="schema", # or block
+	instruction="Extract all the products from the content with 'name', 'short_description', 'price', 'brand', 'product code', 'availability' and 'specs' fields. Short_description should not exceed 100 words. Return valid JSON", # prompt
+	chunk_token_threshold=1000, # max tokens per chunk
+	overlap_rate=0.05, # 0.1 means 10% of each chunk is repeated to preserve context continuity
+	input_format="html", # or markdown, fit_markdown
+)
 
 # using BrowserConfig for global settings about the browser’s environment.
 base_browser_config = BrowserConfig(
@@ -104,21 +119,7 @@ base_http_crawl_config = HTTPCrawlerConfig(
 	follow_redirects=True,
 )
 
-base_llm_strategy = LLMExtractionStrategy(
-	llm_config=LLMConfig(
-		provider=os.environ.get('OPEN_AI_MODEL'),
-		api_token=os.environ.get('OPEN_AI_KEY'),
-		temperature=0.0,
-		max_tokens=800,
-	),
-	apply_chunking=True,
-	schema=Product.model_json_schema(),
-	extraction_type="schema", # or block
-	instruction="Extract all the product with 'name' and 'price' from the content", # prompt
-	chunk_token_threshold=1000, # max tokens per chunk
-	overlap_rate=0.05, # 0.1 means 10% of each chunk is repeated to preserve context continuity
-	input_format="html", # or markdown, fit_markdown
-)
+
 
 def load_proxies_from_env():
 	"Load proxies from .env"

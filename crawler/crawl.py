@@ -132,11 +132,80 @@ def get_scraped_links(job_id):
 
     return render_template("crawl/scraped-links-result.html", rows=processed_websites, count=total_count, job_id=job_id)
 
+@bp.route('/scrape-computer-hardware/result/<job_id>', methods=('GET',))
+@login_required
+def get_scraped_computer_hardware(job_id):
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            i.website_id,
+            i.url_id,
+            i.item_id,
+            i.name,
+            i.description,
+            i.price,
+            i.brand,
+            i.product_code,
+            i.availability,
+            COALESCE(u.url_id, w.website_id) AS source_id,
+            COALESCE(u.url_address, w.website_url) AS source_url,
+            -- SQLite builds a valid JSON array of objects for all internal links
+            json_group_array(
+                json_object(
+                    'specification_id', s.specification_id,
+                    'category_name', s.category_name,
+                    'category_value', s.category_value
+                )
+            ) AS specs
+        FROM item i
+        LEFT JOIN website w ON w.website_id = i.website_id
+        LEFT JOIN internal_url u ON u.url_id = i.url_id
+        LEFT JOIN specification s ON s.item_id = i.item_id
+        WHERE i.job_id = ?
+        GROUP BY i.item_id
+        """, (job_id,)
+    ).fetchall()
+
+    processed_products = []
+    
+
+    for row in rows:
+        specs = json.loads(row['specs'])
+
+        # clean up empty artifacts 
+        if specs and specs[0]['specification_id'] is None:
+            specs = []
+        
+
+        processed_products.append({
+            'source_id': row['source_id'],
+            'source_url': row['source_url'],
+            'website_id': row['website_id'],
+            'url_id': row['url_id'],
+            'item_id': row['item_id'],
+            'name': row['name'],
+            'description': row['description'],
+            'price': row['price'],
+            'brand': row['brand'],
+            'product_code': row['product_code'],
+            'availability': row['availability'],
+            'specs': specs
+        })
+
+    total_count = len(processed_products)
+
+    return render_template('crawl/scraped-product-result.html', rows=processed_products, count=total_count, job_id=job_id)
+
 @bp.route('/scrape-computer-hardware', methods=('GET', 'POST'))
 @login_required
 def scrape_hardware_info():
     if request.method == 'POST':
-        url = request.form['url'].strip()
+        url = request.form['url']
+        source = request.form['source']
+
+        website_id = None
+        url_id = None
 
         error = check_url(url)
 
@@ -148,15 +217,22 @@ def scrape_hardware_info():
 
                 job_id = create_crawl_job(
                     db=db,
-                    job_type='EXTRACT'
-                )
+                    job_type='EXTRACT')
 
-                website_id = create_website(db, url, job_id)
+                if source == 'internal':
+                    url_id = request.form['url-id']
+                    website_id = request.form['website-id']
 
-                db.commit()
+                else:
+                    website_id = create_website(
+                        db,
+                        url=url,
+                        job_id=job_id)
+                    
+                    db.commit()
+                    
 
-                task = extract_hardware_info_task.delay(job_id, website_id, url)
-
+                task = extract_hardware_info_task.delay(job_id, website_id, url_id, url)
 
                 assign_celery_task_id_to_crawl_job(
                     db=db,
@@ -195,4 +271,3 @@ def delete_job(job_id):
     db.commit()
     flash_info_alert("Deleted the results")
     return redirect(url_for("crawl.get_status")) 
-

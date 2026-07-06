@@ -3,7 +3,7 @@ import asyncio
 from crawler import celery_global_instance
 from crawler.db import get_db
 from crawler.helper import (
-    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, prefetch_links, CRAWL_FAILED
+    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED
 )
 
 
@@ -40,8 +40,6 @@ def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pa
                     asyncio.set_event_loop(loop)
                     
                 # Run your async function to completion inside the safe loop
-
-                
                 response = loop.run_until_complete(bfs(url, max_depth, max_pages))
                 
                 for depth, results in response.items():
@@ -84,7 +82,7 @@ def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pa
 
 
 @celery_global_instance.task(bind=True, ignore_result=False)
-def extract_hardware_info_task(self, job_id):
+def extract_hardware_info_task(self, job_id, website_id, url_id, url):
     from crawler import create_app
 
     flask_app = create_app()
@@ -92,5 +90,73 @@ def extract_hardware_info_task(self, job_id):
         db = get_db()
 
         mark_crawl_job_started(db, self.request.id, job_id)
+
+        try:
+            try:
+            # Check if an event loop is already assigned to this worker thread
+                loop = asyncio.get_event_loop()
+            except RuntimeError as e:
+                print(str(e))
+                # Create a new isolated loop if none exists
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            # Run your async function to completion inside the safe loop
+            response = loop.run_until_complete(scrape_product(url))
+
+            if response:
+                if response['result']:
+                    for resp in response['result']:
+                        row = (resp['name'], resp['short_description'], resp['price'], resp['brand'], resp['product_code'], resp['availability'], job_id, url_id, website_id)
+
+                        curr = db.execute("""
+                            INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        row
+                        )
+                        item_id = curr.lastrowid
+
+                        if resp.get('specs', []):
+                            _rows = []
+                            for spec in resp['specs']:
+                                _rows.append((item_id, spec['category'], spec['value']))
+
+                            db.executemany("""
+                                INSERT INTO specification (item_id, category_name, category_value)
+                                VALUES (?, ?, ?)
+                            """,
+                            _rows
+                            )
+                
+                mark_crawl_job_success(db, job_id)
+
+            else:
+                raise CRAWL_FAILED(
+                    log_message="No Response. Crawler thrown an error"
+                )
+        except Exception as e:
+            db.rollback()
+            mark_crawl_job_failure(db, str(e), job_id)
+            raise
+        
+        
+
+
+
+                
+
+                    
+
+                    
+
+
+
+
+
+
+
+
+
 
         
