@@ -5,15 +5,11 @@ import requests
 from functools import partial
 from flask import flash
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-
 
 # importing functions that handle crawling
 from crawler.deep_crawling import get_links_using_bfs, scrape_content, get_links_using_prefetch_mode, extract_product
 
 load_dotenv()
-
-
 
 # Helper function to check the validity of the URL, using regular expression
 def is_valid_url(url):
@@ -34,8 +30,6 @@ def is_valid_range(num, max=5):
     if 1 <= num <= max:
         return num
     return None
-
-
 
 async def prefetch_links(url):
     return await get_links_using_prefetch_mode(url)
@@ -278,59 +272,3 @@ def check_url(url):
         error = "Misc Error"
     return error
         
-
-
-def save_html_tags(db, html, markup_id):
-    soup = BeautifulSoup(html, 'html.parser')
-
-    title = []
-    headings1 = []
-    headings2 = []
-    alt = []
-
-    for tag in soup.find_all(['title', 'h1', 'h2', 'img']):
-        if tag.name == 'title':
-            title.append((str(tag), markup_id))
-        elif tag.name == 'h1':
-            headings1.append((str(tag), markup_id))
-        elif tag.name == 'h2':
-            headings2.append((str(tag), markup_id))
-        elif tag.name == 'img':
-            if tag.has_attr('alt'):
-                alt.append((tag['alt'], str(tag), markup_id))
-            else:
-                alt.append((None, str(tag), markup_id))
-    
-    db.executemany(
-        """
-        INSERT INTO title_tag (title, markup_id)
-        VALUES (?,?)
-        """,
-        title
-    )
-    db.executemany(
-        """
-        INSERT INTO h1_tag (h1, markup_id)
-        VALUES (?,?)
-        """,
-        headings1
-    )
-    db.executemany(
-        """
-        INSERT INTO h2_tag (h2, markup_id)
-        VALUES (?,?)
-        """,
-        headings2
-    )
-    db.executemany(
-        """
-        INSERT INTO img_alt_tag (alt_text, img_tag, markup_id)
-        VALUES (?,?,?)
-        """,
-        alt
-    )
-
-    title.clear()
-    headings1.clear()
-    headings2.clear()
-    alt.clear()

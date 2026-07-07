@@ -57,7 +57,7 @@ CREATE TABLE item (
     item_id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL,
     url_id INTEGER,
-    website_id INTEGER,
+    website_id INTEGER NOT NULL,
     name TEXT,
     description TEXT,
     price INTEGER,
@@ -65,9 +65,8 @@ CREATE TABLE item (
     product_code TEXT,
     availability TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
-    FOREIGN KEY (website_id) REFERENCES website (website_id),
+    FOREIGN KEY (website_id) REFERENCES website (website_id) ON DELETE CASCADE,
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
-    CHECK(url_id IS NOT NULL or website_id IS NOT NULL)
 );
 
 CREATE TABLE specification (
