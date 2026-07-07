@@ -2,7 +2,7 @@ import os
 import json
 
 import aiohttp
-from crawl4ai import GeolocationConfig, PlaywrightAdapter, UndetectedAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig
+from crawl4ai import GeolocationConfig, PlaywrightAdapter, UndetectedAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig, JsonCssExtractionStrategy
 
 from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, CrawlerRunConfig
 
@@ -36,9 +36,12 @@ load_dotenv()
 ua_generator = UserAgentGenerator()
 
 
-lmxl_scraping_strategy = LXMLWebScrapingStrategy()
+lxml_scraping_strategy = LXMLWebScrapingStrategy()
+
+# extraction_strategy = JsonCssExtractionStrategy()
 
 undetected_adapter = UndetectedAdapter()
+
 
 class Specs(BaseModel):
 	category: str

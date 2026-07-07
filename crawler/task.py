@@ -109,6 +109,8 @@ def extract_hardware_info_task(self, job_id, website_id, url_id, url):
                     for resp in response['result']:
                         row = (resp['name'], resp['short_description'], resp['price'], resp['brand'], resp['product_code'], resp['availability'], job_id, url_id, website_id)
 
+                        
+
                         curr = db.execute("""
                             INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

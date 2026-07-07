@@ -5,7 +5,7 @@ import json
 from crawl4ai import AsyncWebCrawler
 
 from crawler.crawl_config import (
-	lmxl_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, base_llm_strategy, load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy, get_http_crawl_strategy, external_fetch 
+	lxml_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, base_llm_strategy, load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy, get_http_crawl_strategy, external_fetch 
 )
 
 async def run_crawler_to_extract_links(url, browser_config=None, run_config=None, crawler_strategy=None):
@@ -71,7 +71,7 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 			filter_chain=get_crawling_filter_chain(url),
 		),
 		magic=True,
-		scraping_strategy=lmxl_scraping_strategy,
+		scraping_strategy=lxml_scraping_strategy,
 		wait_until="load",
 		scan_full_page=False,
     	delay_before_return_html=5.0,  # Additional delay
