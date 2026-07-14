@@ -8,7 +8,7 @@ from flask import flash
 from dotenv import load_dotenv
 
 # importing functions that handle crawling
-from crawler.deep_crawling import get_links_using_bfs, scrape_markup_simple, get_links_using_prefetch_mode, extract_product
+from crawler.deep_crawling import get_links_using_bfs, extract_product, scrape_markup
 
 load_dotenv()
 
@@ -32,16 +32,14 @@ def is_valid_range(num, max=5):
         return num
     return None
 
-async def prefetch_links(url):
-    return await get_links_using_prefetch_mode(url)
 
 async def bfs(url, max_depth, max_pages):
     # function returns all the internal links & their depth in the given URL 
     return await get_links_using_bfs(url, max_depth, max_pages)
 
-async def scrape_html(url):
+async def scrape_html(urls):
     # function returns the scraped HTML markup
-    return await scrape_markup_simple(url)
+    return await scrape_markup(urls)
 
 async def scrape_product(url):
     # function returns the scraped HTML markup
@@ -56,7 +54,7 @@ def find_website(db, website_id):
     (website_id,)
     ).fetchone()
 
-    if row and row['website_id']:
+    if row:
         return True
     
     return False
@@ -204,6 +202,7 @@ def create_crawl_job(db, job_type):
         """,
         (job_type, 'PENDING')
     )
+    
     return cur.lastrowid
 
 

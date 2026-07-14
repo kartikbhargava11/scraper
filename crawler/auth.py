@@ -73,7 +73,7 @@ def login():
 
     return render_template('auth/login.html')
 
-@bp.route('/logut')
+@bp.route('/logout')
 def logout():
     session.clear()
     flash_success_alert('Logged out Successfully')

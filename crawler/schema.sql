@@ -38,6 +38,7 @@ CREATE TABLE website (
 CREATE TABLE internal_url (
     url_id INTEGER PRIMARY KEY AUTOINCREMENT,
     url_address TEXT NOT NULL,
+    redirected_url_address TEXT,
     depth INTEGER DEFAULT NULL,
     job_id INTEGER NOT NULL,
     website_id INTEGER NOT NULL,
@@ -46,7 +47,10 @@ CREATE TABLE internal_url (
     redirected_status_code INTEGER,
     page_description TEXT,
     page_title TEXT,
+    number_of_images INTEGER,
+    number_of_internal_links INTEGER,
     markdown TEXT,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
     FOREIGN KEY (website_id) REFERENCES website (website_id)
 );

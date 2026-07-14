@@ -3,7 +3,7 @@ import asyncio
 from crawler import celery_global_instance
 from crawler.db import get_db
 from crawler.helper import (
-    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED
+    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED, scrape_html
 )
 
 
@@ -53,6 +53,7 @@ def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pa
                             result['status_code'],
                             result['redirected_status_code'],
                             result['error_message'],
+                            result['markdown'],
                             depth,
                             job_id,
                             website_id
@@ -67,8 +68,8 @@ def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pa
 
             db.executemany(
                 """
-                INSERT INTO internal_url (url_address, page_title, page_description, number_of_images, number_of_internal_links, status_code, redirected_status_code, error_message, depth, job_id, website_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO internal_url (url_address, page_title, page_description, number_of_images, number_of_internal_links, status_code, redirected_status_code, error_message, markdown, depth, job_id, website_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows
             )
@@ -139,7 +140,7 @@ def extract_hardware_info_task(self, job_id, website_id, url_id, url):
             raise
         
 
-@celery_global_instance(bind=True, ignore_result=False)
+@celery_global_instance.task(bind=True, ignore_result=False)
 def scrape_markup_in_bulk_task(self, job_id, website_id):
     from crawler import create_app
 
@@ -147,9 +148,23 @@ def scrape_markup_in_bulk_task(self, job_id, website_id):
     with flask_app.app_context():
         db = get_db()
 
-        mark_crawl_job_started(db, self.request.id, job_id)
-
         try:
+
+            mark_crawl_job_started(db, self.request.id, job_id)
+
+            urls = db.execute("""
+            SELECT url_address FROM internal_url
+            WHERE website_id = ?
+            """,
+            (website_id,)
+            ).fetchall()
+
+
+            if not urls:
+                raise Exception(f"No URLs Found for the website_id={website_id}")
+
+            _urls = [url['url_address'] for url in urls]
+
             try:
             # Check if an event loop is already assigned to this worker thread
                 loop = asyncio.get_event_loop()
@@ -160,8 +175,27 @@ def scrape_markup_in_bulk_task(self, job_id, website_id):
                 asyncio.set_event_loop(loop)
                 
             # Run your async function to completion inside the safe loop
-            response = loop.run_until_complete()
+            response = loop.run_until_complete(scrape_html(_urls))
 
+
+            if isinstance(response, dict) and response.get('exception', False):
+                raise CRAWL_FAILED(
+                    log_message=response.get("error", "Unknown error")
+                )
+            
+            rows = []
+
+            for url, resp in response.items():
+                rows.append((website_id, url, resp['url'], resp['status_code'], resp['page_title'], resp['page_description'], resp['error_message'], resp['redirected_status_code'], resp['number_of_images'], resp['number_of_internal_links'], resp['markdown'], job_id))
+
+            db.executemany(
+                """
+                INSERT INTO internal_url (website_id, url_address, redirected_url_address, status_code, page_title, page_description, error_message, redirected_status_code, number_of_images, number_of_internal_links, markdown, job_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows
+            )
+            db.commit()
 
             mark_crawl_job_success(db, job_id)
             

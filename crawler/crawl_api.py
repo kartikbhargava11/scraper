@@ -28,6 +28,12 @@ def scrape_links():
     max_pages = data.get('max-pages')
     max_depth = data.get('max-depth')
     job_type = data.get('job-type').strip()
+    
+    if not job_type:
+        return jsonify({
+            "success": False,
+            "error_message": "job_type is required. Accepted values are 'MAP', 'DEEP_CRAWLING'"
+        }), 400
 
     error = data_sanity_checks(
         url=url,
@@ -39,40 +45,40 @@ def scrape_links():
             "success": False,
             "error_message": error
         }), 400
-    else:
-        try:
-            db = get_db()
 
-            job_id = create_crawl_job(
-                db=db,
-                job_type=job_type)
-            
-            website_id = create_website(db, url, job_id, max_depth=max_depth, max_pages=max_pages)
+    try:
+        db = get_db()
 
-            db.commit()
+        job_id = create_crawl_job(
+            db=db,
+            job_type=job_type)
+        
+        website_id = create_website(db, url, job_id, max_depth=max_depth, max_pages=max_pages)
 
-            task = scrape_links_task.delay(job_id, job_type, url, website_id, int(max_depth), int(max_pages))
+        db.commit()
 
-            assign_celery_task_id_to_crawl_job(
-                db=db,
-                task_id=task.id,
-                job_id=job_id)
+        task = scrape_links_task.delay(job_id, job_type, url, website_id, int(max_depth), int(max_pages))
 
-        except Exception as e:
-            db.rollback()
-            return jsonify({
-                "success": False,
-                "error_message": str(e)
-            }), 500
+        assign_celery_task_id_to_crawl_job(
+            db=db,
+            task_id=task.id,
+            job_id=job_id)
 
-        else:
-            return jsonify({
-                "success": True,
-                "message": "Request is valid. [ACCEPTED]",
-            }), 202
+    except Exception as e:
+        db.rollback()
+        return jsonify({
+            "success": False,
+            "error_message": str(e)
+        }), 500
+
+    
+    return jsonify({
+        "success": True,
+        "message": "Request is valid. [ACCEPTED]",
+    }), 202
 
 @bp.route('/scrape-markup/bulk', methods=('POST',))
-def scrape_markup_in_bulk():
+def scrape_markup_bulk():
     if not request.is_json:
         return jsonify({
             "success": False,
@@ -81,7 +87,7 @@ def scrape_markup_in_bulk():
     
     data = request.get_json()
 
-    website_id = data.get('website-id')
+    website_id = data.get('website_id')
 
     if not website_id:
         return jsonify({
@@ -100,6 +106,8 @@ def scrape_markup_in_bulk():
             }), 400
 
         job_id = create_crawl_job(db=db, job_type="SCRAPE_BULK")
+
+        db.commit()
 
         task = scrape_markup_in_bulk_task.delay(job_id, website_id)
 
@@ -209,6 +217,8 @@ def scrape_products():
         "message": "Request is valid. [ACCEPTED]",
     }), 202
 
+
+
 @bp.route('/scrape-links/result/<job_id>', methods=('GET',))
 def get_scraped_links(job_id):
     db = get_db()
@@ -239,13 +249,16 @@ def get_scraped_links(job_id):
                     'number_of_images', i.number_of_images,
                     'number_of_internal_links', i.number_of_internal_links,
                     'error_message', i.error_message,
-                    'internal_url_job_id', i.job_id
+                    'internal_url_job_id', i.job_id,
+                    'markdown', i.markdown
                 )
             ) AS internal_links_json
         FROM crawl_job j
-        INNER JOIN website w ON w.job_id = j.job_id
-        -- LEFT JOIN ensures websites with 0 internal links still appear
-        LEFT JOIN internal_url i ON i.job_id = j.job_id AND i.website_id = w.website_id
+
+        RIGHT JOIN website w ON w.website_id = i.website_id
+
+        LEFT JOIN internal_url i ON i.job_id = j.job_id
+
         WHERE j.job_id = ?
         -- Grouping by website_id collapses all related links into the JSON array above
         GROUP BY w.website_id

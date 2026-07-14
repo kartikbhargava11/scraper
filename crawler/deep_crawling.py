@@ -67,7 +67,7 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 						"number_of_images": len(result.media.get("images", [])),
 						"number_of_internal_links": len(result.links.get("internal", [])),
 						"extracted_content": json.loads(result.extracted_content) if result.success and isinstance(result.extracted_content, list) else None,
-						"markup_word_count": len(result.markdown.split()) if result.success else None,
+						"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None,
 					}
 				else:
 					print(f"Duplicated URL: {url}")
@@ -81,6 +81,8 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 		return error
 
 def process_streamed_crawl_result(pages_by_depth, result):
+	print(f"url={result.url}, success={result.success}, code={result.status_code}")
+
 	depth = result.metadata.get("depth", 0)
 	if depth not in pages_by_depth:
 		pages_by_depth[depth] = []
@@ -94,7 +96,7 @@ def process_streamed_crawl_result(pages_by_depth, result):
 		"redirected_status_code": result.redirected_status_code, # final redirect destination
 		"number_of_images": len(result.media.get("images", [])),
 		"number_of_internal_links": len(result.links.get("internal", [])),
-		"markdown": result.fit_markdown if result.success else None
+		"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None
 	})
 	return pages_by_depth
 
@@ -115,7 +117,7 @@ def process_crawl_result(results):
 			"redirected_status_code": result.redirected_status_code, # final redirect destination
 			"number_of_images": len(result.media.get("images", [])),
 			"number_of_internal_links": len(result.links.get("internal", [])),
-			"markdown": result.fit_markdown if result.success else None
+			"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None
 		})
 	return pages_by_depth
 

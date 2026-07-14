@@ -224,7 +224,7 @@ def get_crawling_filter_chain(url):
 		URLPatternFilter(patterns=["*[?]*", "*account*", "*cart*"], reverse=True),
 
 		# matches URL patterns using wildcard syntax
-		URLPatternFilter(patterns=["*product*"]),
+		URLPatternFilter(patterns=["*product*", "*buy*", "*price*", "*online*"]),
 
 		# content type filtering
 		ContentTypeFilter(allowed_types=["text/html"])
@@ -244,7 +244,7 @@ def get_bfs_crawl_strategy(max_depth, filter_chain=None, max_pages=None):
 	return BFSDeepCrawlStrategy(
 		max_depth=max_depth, # number of levels to crawl beyond the starting page
 		include_external=False,
-		filter_chain=filter_chain if filter_chain else FilterChain(),
+		filter_chain=filter_chain or FilterChain(),
 		max_pages=max_pages, # max number of pages to crawl
 	)
 
