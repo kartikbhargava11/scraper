@@ -21,7 +21,7 @@ def create_app(test_config=None) -> Flask:
 
     app.config.from_mapping(
         DEBUG=os.environ.get('DEBUG', False),
-        SECRET_KEY=os.environ.get('SECRET_KEY', 'local-secret-key-for-flask-backend'),
+        SECRET_KEY=os.environ.get('SECRET_KEY'),
         DATABASE=os.path.join(app.instance_path, 'crawler.sqlite'),
         TIMEZONE=os.environ.get('TIMEZONE', 'Asia/Kolkata'),
         DATETIME_FORMAT="%d %b %Y, %-I:%M %p"
@@ -75,6 +75,8 @@ def create_app(test_config=None) -> Flask:
     from . import crawl
     app.register_blueprint(crawl.bp)
 
+    from . import crawl_api
+    app.register_blueprint(crawl_api.bp)
 
     app.add_url_rule('/', endpoint='index')
 

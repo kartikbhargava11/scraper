@@ -104,45 +104,71 @@ def extract_hardware_info_task(self, job_id, website_id, url_id, url):
             # Run your async function to completion inside the safe loop
             response = loop.run_until_complete(scrape_product(url))
 
-            if response:
-                if response['result']:
-                    for resp in response['result']:
-                        row = (resp['name'], resp['short_description'], resp['price'], resp['brand'], resp['product_code'], resp['availability'], job_id, url_id, website_id)
+            if isinstance(response, dict) and response['result']:
 
-                        
+                for resp in response['result']:
+                    row = (resp['name'], resp['short_description'], resp['price'], resp['brand'], resp['product_code'], resp['availability'], job_id, url_id, website_id)
 
-                        curr = db.execute("""
-                            INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    curr = db.execute("""
+                        INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, row)
+                    
+                    item_id = curr.lastrowid
+
+                    if resp.get('specs', []):
+
+                        _rows = []
+                        for spec in resp['specs']:
+                            _rows.append((item_id, spec['category'], spec['value']))
+
+                        db.executemany("""
+                            INSERT INTO specification (item_id, category_name, category_value)
+                            VALUES (?, ?, ?)
                         """,
-                        row
-                        )
-                        item_id = curr.lastrowid
-
-                        if resp.get('specs', []):
-                            _rows = []
-                            for spec in resp['specs']:
-                                _rows.append((item_id, spec['category'], spec['value']))
-
-                            db.executemany("""
-                                INSERT INTO specification (item_id, category_name, category_value)
-                                VALUES (?, ?, ?)
-                            """,
-                            _rows
-                            )
+                        _rows)
                 
                 mark_crawl_job_success(db, job_id)
 
             else:
-                raise CRAWL_FAILED(
-                    log_message="No Response. Crawler thrown an error"
-                )
+                raise CRAWL_FAILED(log_message="No Response. Crawler thrown an error")
+            
         except Exception as e:
             db.rollback()
             mark_crawl_job_failure(db, str(e), job_id)
             raise
         
-        
+
+@celery_global_instance(bind=True, ignore_result=False)
+def scrape_markup_in_bulk_task(self, job_id, website_id):
+    from crawler import create_app
+
+    flask_app = create_app()
+    with flask_app.app_context():
+        db = get_db()
+
+        mark_crawl_job_started(db, self.request.id, job_id)
+
+        try:
+            try:
+            # Check if an event loop is already assigned to this worker thread
+                loop = asyncio.get_event_loop()
+            except RuntimeError as e:
+                print(str(e))
+                # Create a new isolated loop if none exists
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            # Run your async function to completion inside the safe loop
+            response = loop.run_until_complete()
+
+
+            mark_crawl_job_success(db, job_id)
+            
+        except Exception as e:
+            db.rollback()
+            mark_crawl_job_failure(db, str(e), job_id)
+            raise
 
 
 

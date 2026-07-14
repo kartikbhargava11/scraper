@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS website;
 DROP TABLE IF EXISTS internal_url;
 DROP TABLE IF EXISTS crawl_job;
 DROP TABLE IF EXISTS item;
+DROP TABLE IF EXISTS duplicate_item;
 DROP TABLE IF EXISTS specification;
 
 
@@ -44,11 +45,8 @@ CREATE TABLE internal_url (
     status_code INTEGER,
     redirected_status_code INTEGER,
     page_description TEXT,
-    llm_description TEXT,
     page_title TEXT,
-    number_of_images INTEGER,
-    number_of_internal_links INTEGER,
-    keyword_relevance_score INTEGER,
+    markdown TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
     FOREIGN KEY (website_id) REFERENCES website (website_id)
 );
@@ -60,13 +58,31 @@ CREATE TABLE item (
     website_id INTEGER NOT NULL,
     name TEXT,
     description TEXT,
-    price INTEGER,
+    price TEXT,
     brand TEXT,
     product_code TEXT,
     availability TEXT,
+    FOREIGN KEY (job_id) REFERENCES crawl_job (job_id),
+    FOREIGN KEY (website_id) REFERENCES website (website_id) ON DELETE CASCADE,
+    FOREIGN KEY (url_id) REFERENCES internal_url (url_id)
+);
+
+
+CREATE TABLE duplicate_item (
+    duplicate_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    url_id INTEGER,
+    website_id INTEGER NOT NULL,
+    similar_to_item_id INTEGER NOT NULL,
+    name TEXT,
+    product_code TEXT,
+    price TEXT,
+    brand TEXT,
+    similarity_score REAL NOT NULL,
+    FOREIGN KEY (similar_to_item_id) REFERENCES item (item_id),
     FOREIGN KEY (job_id) REFERENCES crawl_job (job_id) ON DELETE CASCADE,
     FOREIGN KEY (website_id) REFERENCES website (website_id) ON DELETE CASCADE,
-    FOREIGN KEY (url_id) REFERENCES internal_url (url_id),
+    FOREIGN KEY (url_id) REFERENCES internal_url (url_id)
 );
 
 CREATE TABLE specification (
@@ -74,7 +90,7 @@ CREATE TABLE specification (
     item_id INTEGER NOT NULL,
     category_name TEXT,
     category_value TEXT,
-    FOREIGN KEY (item_id) REFERENCES item (item_id)
+    FOREIGN KEY (item_id) REFERENCES item (item_id) ON DELETE CASCADE
 );
 
 

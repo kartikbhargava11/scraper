@@ -2,12 +2,13 @@ import os
 import re
 
 import requests
+from difflib import SequenceMatcher
 from functools import partial
 from flask import flash
 from dotenv import load_dotenv
 
 # importing functions that handle crawling
-from crawler.deep_crawling import get_links_using_bfs, scrape_content, get_links_using_prefetch_mode, extract_product
+from crawler.deep_crawling import get_links_using_bfs, scrape_markup_simple, get_links_using_prefetch_mode, extract_product
 
 load_dotenv()
 
@@ -40,11 +41,106 @@ async def bfs(url, max_depth, max_pages):
 
 async def scrape_html(url):
     # function returns the scraped HTML markup
-    return await scrape_content(url)
+    return await scrape_markup_simple(url)
 
 async def scrape_product(url):
     # function returns the scraped HTML markup
     return await extract_product(url)
+
+
+def find_website(db, website_id):
+    row = db.execute("""
+        SELECT * FROM website
+        WHERE website_id = ?
+    """,
+    (website_id,)
+    ).fetchone()
+
+    if row and row['website_id']:
+        return True
+    
+    return False
+    
+
+
+# same product = similar name + similar brand + close price
+# normalizes a string
+def normalize_text(value):
+    # "Corsair-Vengeance RAM!" -> "corsair vengeance ram!"
+    value = (value or '').lower()
+
+    # Replaces anything that is not a lowercase letter or number with a space. also removes extra spaces at the start/end.
+    # "corsair-vengeance_8gb!!!" -> "corsair vengeance 8gb"
+    return re.sub(r'[^a-z0-9]+', ' ', value).strip()
+
+# Compares two normalized strings and returns a score from 0.0 to 1.0.
+# similarity("Corsair RAM 8GB", "corsair ram 8 gb")
+# Might return something high like 0.9.
+# if similarity(name1, name2) >= 0.92: -> probably same product
+def similarity(a, b):
+    return SequenceMatcher(None, normalize_text(a), normalize_text(b)).ratio()
+
+
+# Turns messy price strings into floats.
+# "₹4,999" -> 4999.0
+# "Rs. 12,500.00" -> 12500.0
+# None -> None
+def normalize_price(value):
+    if value is None:
+        return None
+    cleaned = re.sub(r'[^0-9.]', '', str(value))
+    return float(cleaned) if cleaned else None
+
+
+# Checks if two prices are close enough. 0.03 means 3%.
+# price_close("₹10,000", "₹10,100")
+# Difference is 1%, so returns True.
+def price_close(a, b, tolerance=0.02):
+    a = normalize_price(a)
+    b = normalize_price(b)
+    if a is None or b is None:
+        return True
+    # does the percentage check:
+    return abs(a - b) / max(a, b) <= tolerance
+
+
+def is_duplicated_product(db, website_id, resp):
+    product_code = (resp.get('product_code') or '').strip()
+
+    if product_code:
+        row = db.execute("""
+            SELECT item_id
+            FROM item
+            WHERE website_id = ? AND lower(product_code) = lower(?)
+            """,
+            (website_id, product_code)
+        ).fetchone()
+
+        if row:
+            return True
+        
+    existing = db.execute(
+        """
+        SELECT item_id, name, brand, price
+        FROM item
+        WHERE website_id = ?
+        """,
+        (website_id,)
+    ).fetchall()
+
+    for item in existing:
+        name_score = similarity(resp.get('name'), item['name'])
+        brand_score = similarity(resp.get('brand'), item['brand'])
+
+        if (
+            name_score >= 0.92
+            and brand_score >= 0.85
+            and price_close(resp.get('price'), item['price'])
+        ):
+            return True
+        
+
+
 
 def call_firecrawl_map(url):
     payload = {
