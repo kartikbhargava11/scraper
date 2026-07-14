@@ -2,7 +2,9 @@ import os
 import json
 
 import aiohttp
-from crawl4ai import GeolocationConfig, PlaywrightAdapter, UndetectedAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig, JsonCssExtractionStrategy
+from crawl4ai import GeolocationConfig, PlaywrightAdapter, UndetectedAdapter, RoundRobinProxyStrategy, LLMExtractionStrategy, LLMConfig, HTTPCrawlerConfig, JsonCssExtractionStrategy, RateLimiter
+
+from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
 
 from crawl4ai.async_configs import CacheMode, ProxyConfig, BrowserConfig, CrawlerRunConfig
 
@@ -107,8 +109,10 @@ base_crawler_run_config = CrawlerRunConfig(
 	simulate_user=True,
 	prefetch=False,
 	exclude_external_images=True,
+	exclude_external_links=True,
 	process_iframes=False,
 	remove_overlay_elements=True,
+	remove_consent_popups=True,
 	delay_before_return_html=2.0,
 )
 
@@ -122,6 +126,38 @@ base_http_crawl_config = HTTPCrawlerConfig(
 	follow_redirects=True,
 )
 
+
+# MemoryAdaptiveDispatcher dynamically adjusts concurrency based on available system memory and 
+# includes built-in rate limiting. This prevents out-of-memory errors and 
+# avoids overwhelming target websites.
+# arun_many() uses MemoryAdaptiveDispatcher by default after 0.5.0
+
+def get_rate_limiter(base_delay=(3.0, 5.0), max_delay=60, max_retries=1):
+	return RateLimiter(
+		base_delay=base_delay,
+		max_delay=max_delay,
+		max_retries=max_retries,
+		rate_limit_codes=[429, 503, 403, 202]
+	)
+
+def get_memory_adaptive_dispatcher(
+		memory_threshold_percent=90.0,
+		critical_threshold_percent=95,
+		recovery_threshold_percent=85,
+		max_session_permit=4,
+		check_interval=5,
+		memory_wait_timeout=1200,
+		rate_limiter=None):
+	
+	return MemoryAdaptiveDispatcher(
+		memory_threshold_percent=memory_threshold_percent,
+		critical_threshold_percent=critical_threshold_percent,
+		recovery_threshold_percent=recovery_threshold_percent,
+		max_session_permit=max_session_permit,
+		check_interval=check_interval,
+		rate_limiter=rate_limiter or get_rate_limiter(),
+		memory_wait_timeout=memory_wait_timeout
+	)
 
 
 def load_proxies_from_env():
