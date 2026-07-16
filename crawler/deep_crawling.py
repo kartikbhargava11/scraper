@@ -49,7 +49,7 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 			
 
 			for url, result in results:
-				print(type(result.extracted_content))
+				
 				if result.success:
 					print(f"{url} success; [status_code={result.status_code}]")
 
@@ -66,8 +66,7 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 						"redirected_status_code": result.redirected_status_code, # final redirect destination
 						"number_of_images": len(result.media.get("images", [])),
 						"number_of_internal_links": len(result.links.get("internal", [])),
-						"extracted_content": json.loads(result.extracted_content) if result.success and result.extracted_content else None,
-						"markdown": result.markdown.raw_markdown[:400] if result.success and result.markdown else None,
+						"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
 					}
 				else:
 					print(f"Duplicated URL: {url}")
@@ -96,7 +95,7 @@ def process_streamed_crawl_result(pages_by_depth, result):
 		"redirected_status_code": result.redirected_status_code, # final redirect destination
 		"number_of_images": len(result.media.get("images", [])),
 		"number_of_internal_links": len(result.links.get("internal", [])),
-		"markdown": result.markdown.raw_markdown[:800] if result.success and result.markdown else None
+		"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
 	})
 	return pages_by_depth
 
@@ -117,7 +116,7 @@ def process_crawl_result(results):
 			"redirected_status_code": result.redirected_status_code, # final redirect destination
 			"number_of_images": len(result.media.get("images", [])),
 			"number_of_internal_links": len(result.links.get("internal", [])),
-			"markdown": result.markdown.raw_markdown[:800] if result.success and result.markdown else None
+			"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
 		})
 	return pages_by_depth
 
@@ -166,7 +165,6 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 		),
 		magic=True,
 		scraping_strategy=lxml_scraping_strategy,
-		scan_full_page=False,
     	delay_before_return_html=5.0,  # Additional delay
 		stream=True,
 		max_retries=0
@@ -175,8 +173,6 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 	bfs_browser_config = base_browser_config.clone(
 		enable_stealth=True,
 		# headless=False,
-		viewport_width=1280,
-    	viewport_height=950
 	)
 
 
@@ -205,13 +201,10 @@ async def extract_product(url):
 	llm_run_config = base_crawler_run_config.clone(
 		magic=True,
 		wait_until="networkidle",
-		override_navigator=True,
-		simulate_user=True,
 		delay_before_return_html=8.0,  # Additional delay
 		extraction_strategy=base_llm_strategy,
 		proxy_config=None,
-		proxy_rotation_strategy=None,
-		stream=False
+		proxy_rotation_strategy=None
 	)
 
 	undetected_crawler_strategy = get_playwright_crawl_strategy(
@@ -238,17 +231,20 @@ async def extract_product(url):
 
 async def scrape_markup(urls):
 
+	_urls = None
 
 	# load_proxies_from_env()
+	if isinstance(urls, str):
+		_urls = [urls]
+
 
 	browser_config = base_browser_config.clone(
-		enable_stealth=True
+		enable_stealth=True,
+		
 	)
 
 	run_config = base_crawler_run_config.clone(
 		magic=True,
-		override_navigator=True,
-		simulate_user=True,
 		delay_before_return_html=5.0,  # Additional delay
 		proxy_config=None,
 		proxy_rotation_strategy=None
@@ -262,7 +258,7 @@ async def scrape_markup(urls):
 	base_memory_dispatcher = get_memory_adaptive_dispatcher()
 
 	return await run_crawler_to_scrape_markup(
-		urls,
+		_urls or urls,
 		crawler_strategy=undetected_crawler_strategy,
 		run_config=run_config,
 		browser_config=browser_config,

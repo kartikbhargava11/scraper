@@ -38,38 +38,45 @@
                 {{row['job_type']}}
               </span>
             </li>
-            {% if row['started_at'] and row['finished_at']  %}
-            <li class="list-group-item">
-              <span class="fw-light fs-6">
-                <small>CRAWL STARTED AT:</small>
-              </span>
-              <span class="">
-                {{row['started_at'] | local_datetime }}
-              </span>
-            </li>
-            <li class="list-group-item">
-              <span class="fw-light fs-6">
-                <small>CRAWL FINISHED AT:</small>
-              </span>
-              <span class="">
-                {{row['finished_at'] | local_datetime }}
-              </span>
-            </li>
-            <li class="list-group-item">
-              <span class="fw-light fs-6">
-                <small>CRAWL SPAN:</small>
-              </span>
-              <span class="">
-                {{row['diff_seconds'] }} seconds
-              </span>
-            </li>
-            {% else %}
             <li class="list-group-item">
               <span class="fw-light fs-6">
                   <small>JOB CREATED AT:</small>
               </span>
               <span>
                 {{row['created'] | local_datetime }}
+              </span>
+            </li>
+            <li class="list-group-item">
+              <span class="fw-light fs-6">
+                <small>CRAWL STARTED AT:</small>
+              </span>
+              <span>
+                {% if row['started_at']  %}
+                {{row['started_at'] | local_datetime }}
+                {% else %}
+                N/A
+                {% endif %}
+              </span>
+            </li>
+            <li class="list-group-item">
+              <span class="fw-light fs-6">
+                <small>CRAWL FINISHED AT:</small>
+              </span>
+              <span>
+                {% if row['finished_at']  %}
+                {{row['finished_at'] | local_datetime }}
+                {% else %}
+                N/A
+                {% endif %}
+              </span>
+            </li>
+            {% if row['started_at'] and row['finished_at']  %}
+            <li class="list-group-item">
+              <span class="fw-light fs-6">
+                <small>CRAWL SPAN:</small>
+              </span>
+              <span class="">
+                {{row['diff_seconds'] }} seconds
               </span>
             </li>
             {% endif %}
@@ -86,8 +93,8 @@
           </ul>
           <div class="card-body">
             {% if row['job_status'] == 'SUCCESS' %}
-              {% if row['job_type'] == 'EXTRACT' %}
-                <a href="{{url_for('crawl.get_scraped_computer_hardware', job_id=row['job_id'])}}" class="btn btn-outline-dark rounded-0">View Products</a>
+              {% if row['job_type'] == 'SCRAPE_MARKUP_EXTERNAL' %}
+                <a href="{{url_for('crawl.get_scraped_markup', job_id=row['job_id'])}}" class="btn btn-outline-dark rounded-0">View Markup</a>
               {% else %}
                 <a href="{{url_for('crawl.get_scraped_links', job_id=row['job_id'])}}" class="btn btn-dark rounded-0">View Links</a>
               {% endif %}

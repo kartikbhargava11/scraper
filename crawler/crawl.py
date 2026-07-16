@@ -12,7 +12,7 @@ from crawler.auth import login_required
 from crawler.db import get_db
 from crawler.helper import *
 from crawler.task import (
-    extract_hardware_info_task, scrape_links_task, scrape_markup_in_bulk_task
+    scrape_links_task, scrape_markup_task
 )
 
 bp = Blueprint('crawl', __name__, url_prefix="/crawl")
@@ -132,171 +132,117 @@ def get_scraped_links(job_id):
 
     return render_template("crawl/scraped-links-result.html", rows=processed_websites, count=total_count, job_id=job_id)
 
-@bp.route('/scrape-markup', methods=('POST',))
+@bp.route('/scrape-markup/result/<job_id>', methods=('GET',))
+@login_required
+def get_scraped_markup(job_id):
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT 
+            j.job_id,
+            w.website_id,
+            w.website_url,
+            i.url_id,
+            i.url_address,
+            i.redirected_url_address,
+            i.error_message,
+            i.status_code,
+            i.redirected_status_code,
+            i.page_description,
+            i.page_title,
+            i.markdown,
+            i.created,
+            i.number_of_internal_links,
+            i.number_of_images,
+            CASE 
+                WHEN j.finished_at IS NOT NULL AND j.started_at IS NOT NULL 
+                THEN (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) 
+                ELSE 0 
+            END AS diff_seconds
+        FROM crawl_job j
+        LEFT JOIN internal_url i ON i.job_id = j.job_id
+        INNER JOIN website w ON w.website_id = i.website_id
+        WHERE j.job_id = ?
+        """, (job_id,)
+    ).fetchall()
+
+
+    return render_template('crawl/scraped-markup-result.html', rows=rows)
+
+
+@bp.route('/scrape-markup', methods=('POST', 'GET'))
 def scrape_markup():
     if request.method == 'POST':
-        
-        source = request.form['source'].strip()
-        job_id = None
-        url_address = None
-        website_id = None
-        
         try:
+
+            source = request.form.get('source', '').strip()
+
+            if source not in ('bulk', 'external', 'internal'):
+                raise CODE_BUG(
+                    log_message="Accepted values for source are 'bulk', 'external', or 'internal'."
+                )
+            
+            
+            website_id = None
+            url = None
             db = get_db()
 
-            if source == "internal":
-                website_id = request.form['website-id'].strip()
-                url_address = request.form['url'].strip()
-                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP")
-                
-            elif source == "bulk":
-                website_id = request.form['website-id'].strip()
-                exists = find_website(website_id)
+            if source == "internal" or source == "bulk":
+
+                website_id = request.form.get('website_id', '').strip()
+
+                if not website_id:
+                    raise CODE_BUG(log_message="A valid website_id is required for 'bulk' and 'internal' source.")
+
+                exists = find_website(db, website_id=website_id)
+
                 if not exists:
-                    raise Exception(f"Website ID = {website_id} does not exist in the database")
-                
-                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP_BULK")
+                    raise CODE_BUG(log_message=f"Website ID '{website_id}' does not exist in the database.")
 
+            if source == "internal" or source == "external":
 
-            elif source == "new":
-                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP_NEW")
-                url_address = request.form['url'].strip()
-                website_id = create_website(db, url_address, job_id)
+                url = request.form.get('url', '').strip()
 
-            else:
-                raise Exception("Source is required. Accepted values are 'internal', 'bulk' or 'new'.")
-                
+                if not url:
+                    raise Exception(f"Url is required")
+
+                error_message = check_url(url)
+
+                if error_message:
+                    raise Exception(error_message)
+
+            
+            job_type = f"SCRAPE_MARKUP_{source}".upper()
+
+        
+            job_id = create_crawl_job(db=db, job_type=job_type)
+
+            if source == "external":
+                website_id = create_website(db, url, job_id)
+
             db.commit()
 
-            task = scrape_markup_in_bulk_task.delay(job_id=job_id, website_id=website_id, url_address=url_address, source=source)
+            task = scrape_markup_task.delay(job_id=job_id, website_id=website_id, url_address=url, source=source)
 
-            flash_info_alert('Processing....')
-            return redirect(url_for('crawl.get_status'))
-                
+            assign_celery_task_id_to_crawl_job(
+                db=db,
+                task_id=task.id,
+                job_id=job_id
+            )
+        except CODE_BUG as e:
+            flash_error_alert(str(e))
+            return redirect(url_for('home.page_not_found'))
 
         except Exception as e:
             db.rollback()
             flash_error_alert(str(e))
-
-
-
-@bp.route('/scrape-computer-hardware/result/<job_id>', methods=('GET',))
-@login_required
-def get_scraped_computer_hardware(job_id):
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT
-            i.website_id,
-            i.url_id,
-            i.item_id,
-            i.name,
-            i.description,
-            i.price,
-            i.brand,
-            i.product_code,
-            i.availability,
-            COALESCE(u.url_id, w.website_id) AS source_id,
-            COALESCE(u.url_address, w.website_url) AS source_url,
-            -- SQLite builds a valid JSON array of objects for all internal links
-            json_group_array(
-                json_object(
-                    'specification_id', s.specification_id,
-                    'category_name', s.category_name,
-                    'category_value', s.category_value
-                )
-            ) AS specs
-        FROM item i
-        LEFT JOIN website w ON w.website_id = i.website_id
-        LEFT JOIN internal_url u ON u.url_id = i.url_id
-        LEFT JOIN specification s ON s.item_id = i.item_id
-        WHERE i.job_id = ?
-        GROUP BY i.item_id
-        """, (job_id,)
-    ).fetchall()
-
-    processed_products = []
-    
-
-    for row in rows:
-        specs = json.loads(row['specs'])
-
-        # clean up empty artifacts 
-        if specs and specs[0]['specification_id'] is None:
-            specs = []
         
-
-        processed_products.append({
-            'source_id': row['source_id'],
-            'source_url': row['source_url'],
-            'website_id': row['website_id'],
-            'url_id': row['url_id'],
-            'item_id': row['item_id'],
-            'name': row['name'],
-            'description': row['description'],
-            'price': row['price'],
-            'brand': row['brand'],
-            'product_code': row['product_code'],
-            'availability': row['availability'],
-            'specs': specs
-        })
-
-    total_count = len(processed_products)
-
-    return render_template('crawl/scraped-product-result.html', rows=processed_products, count=total_count, job_id=job_id)
-
-@bp.route('/scrape-computer-hardware', methods=('GET', 'POST'))
-@login_required
-def scrape_hardware_info():
-    if request.method == 'POST':
-        url = request.form['url']
-        source = request.form['source']
-
-        website_id = None
-        url_id = None
-
-        error = check_url(url)
-
-        if error:
-            flash_error_alert(error)
         else:
-            try:
-                db = get_db()
+            flash_info_alert('Processing....')
+            return redirect(url_for('crawl.get_status'))
 
-                job_id = create_crawl_job(
-                    db=db,
-                    job_type='EXTRACT')
+    return render_template("crawl/scrape-markup.html")
 
-                if source == 'internal':
-                    url_id = request.form['url-id']
-                    website_id = request.form['website-id']
-
-                else:
-                    website_id = create_website(
-                        db,
-                        url=url,
-                        job_id=job_id)
-                    
-                db.commit()
-                    
-
-                task = extract_hardware_info_task.delay(job_id, website_id, url_id, url)
-
-                assign_celery_task_id_to_crawl_job(
-                    db=db,
-                    task_id=task.id,
-                    job_id=job_id
-                )
-
-            except Exception as e:
-                db.rollback()
-                flash_error_alert(str(e))
-
-            else:
-                flash_info_alert('Processing....')
-                return redirect(url_for('crawl.get_status'))
-        
-    return render_template('crawl/scrape-hardware.html')
 
 @bp.route('/check-status', methods=('GET',))
 @login_required

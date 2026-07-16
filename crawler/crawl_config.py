@@ -87,7 +87,11 @@ base_browser_config = BrowserConfig(
 	user_agent=ua_generator.generate(os_type="windows", device_type="desktop", browser_type="chrome"),
 	avoid_css=True,
 	avoid_ads=True,
-	max_pages_before_recycle=5,
+	max_pages_before_recycle=4,
+	use_persistent_context=True,
+	extra_args=["--disable-extensions"],
+	sleep_on_close=True, # Add a small delay when closing browser (can help with cleanup issues).
+	browser_mode="docker"
 )
 
 
@@ -105,15 +109,17 @@ base_crawler_run_config = CrawlerRunConfig(
 	cache_mode=CacheMode.BYPASS,
 	excluded_selector="#ads, .tracker, _csrf",
 	scan_full_page=True,
+	scroll_delay=0.5,
 	stream=False,
 	simulate_user=True,
 	prefetch=False,
 	exclude_external_images=True,
 	exclude_external_links=True,
-	process_iframes=False,
+	process_iframes=False, # Inlines iframe content for single-page extraction.
 	remove_overlay_elements=True,
 	remove_consent_popups=True,
 	delay_before_return_html=2.0,
+	excluded_tags=["nav", "footer", "script", "style"], # Removes noisy tags
 )
 
 base_http_crawl_config = HTTPCrawlerConfig(

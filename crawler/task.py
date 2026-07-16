@@ -83,98 +83,7 @@ def scrape_links_task(self, job_id, job_type, url, website_id, max_depth, max_pa
 
 
 @celery_global_instance.task(bind=True, ignore_result=False)
-def extract_hardware_info_task(self, job_id, website_id, url_id, url):
-    from crawler import create_app
-
-    flask_app = create_app()
-    with flask_app.app_context():
-        db = get_db()
-
-        mark_crawl_job_started(db, self.request.id, job_id)
-
-        try:
-            try:
-            # Check if an event loop is already assigned to this worker thread
-                loop = asyncio.get_event_loop()
-            except RuntimeError as e:
-                print(str(e))
-                # Create a new isolated loop if none exists
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-            # Run your async function to completion inside the safe loop
-            response = loop.run_until_complete(scrape_product(url))
-
-            if isinstance(response, dict):
-                if response.get('exception', False):
-                    raise CRAWL_FAILED(
-                        log_message=response.get('error', 'Exception raised by the crawling engine.')
-                    )
-            
-                elif response.get('error_message', None):
-                    raise CRAWL_FAILED(
-                        log_message=f"{response.get('error_message')} status_code={response.get('status_code')}"
-                    )
-            
-                
-                elif isinstance(response.get('extracted_content', None), list):
-                    for resp in response.get('extracted_content'):
-
-                        if is_duplicated_product(db, website_id, resp):
-                            continue
-
-                        row = (
-                            resp['name'],
-                            resp['short_description'],
-                            resp['price'],
-                            resp['brand'],
-                            resp['product_code'],
-                            resp['availability'],
-                            job_id,
-                            url_id, 
-                            website_id)
-
-
-                        curr = db.execute("""
-                            INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, row)
-                        
-                        item_id = curr.lastrowid
-
-                        if resp.get('specs', []):
-
-                            _rows = []
-                            for spec in resp['specs']:
-                                _rows.append((item_id, spec['category'], spec['value']))
-
-                            db.executemany("""
-                                INSERT INTO specification (item_id, category_name, category_value)
-                                VALUES (?, ?, ?)
-                            """,
-                            _rows)
-                    
-                    mark_crawl_job_success(db, job_id)
-                
-                else:
-                    raise CRAWL_FAILED(
-                        log_message="Misc. Error"
-                    )
-
-
-            else:
-                raise CRAWL_FAILED(
-                    log_message="Misc. Error 2"
-                )
-            
-        except Exception as e:
-            db.rollback()
-            mark_crawl_job_failure(db, str(e), job_id)
-            raise
-        
-
-@celery_global_instance.task(bind=True, ignore_result=False)
-def scrape_markup_in_bulk_task(self, job_id, website_id, url_address=None, source=None):
+def scrape_markup_task(self, job_id, website_id, url_address=None, source=None):
     from crawler import create_app
 
     flask_app = create_app()
@@ -187,7 +96,7 @@ def scrape_markup_in_bulk_task(self, job_id, website_id, url_address=None, sourc
 
             urls = []
 
-            if source == "bulk" and website_id:
+            if source == "bulk" and website_id is not None:
                 query_result = db.execute("""
                     SELECT url_address FROM internal_url
                     WHERE website_id = ?
@@ -196,17 +105,14 @@ def scrape_markup_in_bulk_task(self, job_id, website_id, url_address=None, sourc
                 ).fetchall()
 
                 if query_result:
-                    urls = [q['url_address'] for q in query_result]
+                    urls = [_['url_address'] for _ in query_result]
 
-            elif source in ('new', 'internal') and url_address:
-                urls = list(url_address)
+            elif source in ('external', 'internal') and url_address is not None:
+                urls = [url_address]
             
-            
+            if not urls: # second layer protection. a bit redundant but okay.
+                raise Exception("Bad Input.")
 
-            if not urls:
-                raise Exception(f"Bad Input.")
-
-            
 
             try:
             # Check if an event loop is already assigned to this worker thread
@@ -221,48 +127,50 @@ def scrape_markup_in_bulk_task(self, job_id, website_id, url_address=None, sourc
             response = loop.run_until_complete(scrape_html(urls))
 
 
+            if not isinstance(response, dict):
+                raise CRAWL_FAILED(
+                    log_message="Unknown Error"
+                )
+
             if isinstance(response, dict) and response.get('exception', False):
                 raise CRAWL_FAILED(
-                    log_message=response.get("error", "Unknown error")
+                    log_message=response.get("error", "Unknown Error")
                 )
             
-            rows = []
+            required_keys = ["url", "status_code", "page_title", "page_description", "error_message", "redirected_status_code", "number_of_images", "number_of_internal_links", "markdown"]
 
-            for url, resp in response.items():
-                rows.append((website_id, url, resp['url'], resp['status_code'], resp['page_title'], resp['page_description'], resp['error_message'], resp['redirected_status_code'], resp['number_of_images'], resp['number_of_internal_links'], resp['markdown'], job_id))
-        
+            
+            if isinstance(response, dict) and response:
+                
+                # dynamically build rows to insert into db using a list comprehension and item retrieval
+                # This ensures we only grab the inner dictionary values if they exist
 
-            db.executemany(
-                """
-                INSERT INTO internal_url (website_id, url_address, redirected_url_address, status_code, page_title, page_description, error_message, redirected_status_code, number_of_images, number_of_internal_links, markdown, job_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows
-            )
-            db.commit()
+                rows = [
+                    (website_id, url, *(resp.get(k) for k in required_keys), job_id)
+                    for url, resp in response.items()
+                    if isinstance(resp, dict)
+                ]
 
-            mark_crawl_job_success(db, job_id)
+                if not rows:
+                    raise Exception("Code Error. Error with payload from the crawler")
+
+                db.executemany(
+                    """
+                    INSERT INTO internal_url (website_id, url_address, redirected_url_address, status_code, page_title, page_description, error_message, redirected_status_code, number_of_images, number_of_internal_links, markdown, job_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows
+                )
+
+                db.commit()
+
+                mark_crawl_job_success(db, job_id)
+
+            else:
+                raise Exception("Code Error. Error with payload from the crawler")
             
         except Exception as e:
             db.rollback()
             mark_crawl_job_failure(db, str(e), job_id)
             raise
 
-
-
-                
-
-                    
-
-                    
-
-
-
-
-
-
-
-
-
-
-        

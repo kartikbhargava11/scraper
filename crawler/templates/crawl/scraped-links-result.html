@@ -5,7 +5,7 @@
 <div class="row">
   <div class="col-12">
     <h1 class="text-center fs-2 fw-bold text-uppercase">Internal Links [{{ count }} Found]</h1>
-    <h2 class="text-center fs-5 fw-light mb-5">Stays within the same domain (don't follow external links) - Each result contains metadata - Results are returned below after all crawling is complete</h2>
+    <h2 class="text-center fs-5 fw-light mb-5">Each result contains metadata - Results are returned below after all crawling is complete</h2>
     <div class="d-flex gap-2 my-4">
       <form>
         <input type="submit" class="btn btn-outline-primary rounded-0" value="Export to CSV">
@@ -17,7 +17,6 @@
   </div>
   <div class="col-12">
   <table class="table table-responsive">
-    <caption>List of URLs</caption>
     <thead>
       <th scope="col">JOB ID</th>
       <th scope="col">WEBSITE ID</th>
@@ -52,7 +51,7 @@
           <form method="POST" action="{{url_for('crawl.scrape_markup')}}">
             <input type="hidden" name="website-id" value="{{ row['website_id'] }}">
             <input type="hidden" name="source" value="bulk">
-            <input type="submit" class="btn btn-outline-success rounded-0" value="Re-Audit [BULK]">
+            <input type="submit" class="btn btn-dark rounded-0" value="Re-Audit [BULK]">
           </form>
         </td>
       </tr>
@@ -60,13 +59,14 @@
       {% if row['links'] %}
       <tr>
         <td colspan="7">
-            <table class="table table-sm table-bordered table-responsive">
+            <table class="table table-sm table-hover table-bordered table-responsive caption-top">
+              <caption>List of Internal URLs. [{{ count }} Found]</caption>
               <thead>
                 <th scope="col">ID</th>
-                <th scope="col">LINK</th>
+                <th scope="col">INTERNAL LINK</th>
                 <th scope="col">DEPTH</th>
                 <th scope="col">TITLE</th>
-                <th scope="col">DESC</th>
+                <th scope="col">DESCRIPTION</th>
                 <th scope="col">STATUS</th>
                 <th scope="col">ACTION</th>
               </thead>
@@ -77,15 +77,15 @@
                     {{ link['url_id'] }}
                   </td>
                   <td class="external text-wrap">
-                    <a class="fs-6 fst-italic font-light fw-light" href="{{ link['url_address'] }}" target="_blank" rel="nofollow">{{ link['url_address'] }}</a>
+                    <a class="fs-6 font-light fw-light" href="{{ link['url_address'] }}" target="_blank" rel="nofollow">{{ link['url_address'] }}</a>
                   </td>
                   <td>
                     {{ link['depth'] }}
                   </td>
-                  <td class="fw-light fst-italic fs-6">
+                  <td class="fw-light fs-6">
                     {{ link['page_title'] }}
                   </td>
-                  <td class="fw-light fst-italic fs-6">
+                  <td class="fw-light fs-6">
                     {{ link['page_description'] }}
                   </td>
                   <td>
@@ -94,7 +94,7 @@
                     </div>
                   </td>
                   <td>
-                    <form method="POST" action="{{url_for('crawl.scrape_markup')}}">
+                    <form method="post" action="{{url_for('crawl.scrape_markup')}}">
                       <input type="hidden" name="url" value="{{ link['url_address'] }}">
                       <input type="hidden" name="website-id" value="{{ row['website_id'] }}">
                       <input type="hidden" name="source" value="internal">

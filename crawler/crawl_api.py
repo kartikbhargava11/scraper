@@ -6,10 +6,10 @@ from flask import (
 
 from crawler.db import get_db
 from crawler.helper import (
-    data_sanity_checks, create_crawl_job, create_website, assign_celery_task_id_to_crawl_job, check_url, find_website
+    data_sanity_checks, create_crawl_job, create_website, assign_celery_task_id_to_crawl_job, check_url, find_website, return_bad_input_response
 )
 from crawler.task import (
-    scrape_links_task, extract_hardware_info_task, scrape_markup_in_bulk_task
+    scrape_links_task, scrape_markup_task
 )
 
 bp = Blueprint('crawl_api', __name__, url_prefix='/api/v1/crawl')
@@ -77,39 +77,61 @@ def scrape_links():
         "message": "Request is valid. [ACCEPTED]",
     }), 202
 
-@bp.route('/scrape-markup/bulk', methods=('POST',))
-def scrape_markup_bulk():
+@bp.route('/scrape-markup/<source>', methods=('POST',))
+def scrape_markup(source):
     if not request.is_json:
-        return jsonify({
-            "success": False,
-            "error_message": "Content-Type must be application/json"
-        }), 400
+        return return_bad_input_response("Content-Type must be application/json")
+
+    if source not in ('bulk', 'external', 'internal'):
+        return return_bad_input_response("Accepted values are '/bulk', '/external', or '/internal'")
     
+    db = get_db()
+
+    job_type = f"SCRAPE_MARKUP_{source}".upper()
+
     data = request.get_json()
 
-    website_id = data.get('website_id')
+    website_id=None
+    url=None
 
-    if not website_id:
-        return jsonify({
-            "success": False,
-            "error_message": f"website_id is required."
-        }), 400
-    
-    try:
-        db = get_db()
+    if source == "bulk" or source == "internal":
+        website_id = data.get('website_id', '')
+        if not website_id:
+            return return_bad_input_response(error_message="A valid website_id is required for '/bulk' and '/internal'")
+            
         exists = find_website(db, website_id=website_id)
 
         if not exists:
-            return jsonify({
-                "success": False,
-                "error_message": f"Website ID '{website_id}' does not exist in the database."
-            }), 400
+            return return_bad_input_response(error_message=f"Website ID '{website_id}' does not exist in the database.")
+        
 
-        job_id = create_crawl_job(db=db, job_type="SCRAPE_BULK")
+    if source == "internal" or source == "external":
+
+        url = data.get('url', '')
+
+        if not url:
+            return return_bad_input_response(error_message="A valid url is required for '/external' and '/internal'")
+            
+        error_message = check_url(url)
+
+        if error_message:
+            return return_bad_input_response(error_message=error_message)
+        
+    try:
+        job_id = create_crawl_job(db=db, job_type=job_type)
+
+        if source == "external":
+            website_id = create_website(db, url, job_id)
 
         db.commit()
 
-        task = scrape_markup_in_bulk_task.delay(job_id=job_id, website_id=website_id, source="bulk")
+        task = scrape_markup_task.delay(job_id=job_id, website_id=website_id, url_address=url, source=source)
+
+        assign_celery_task_id_to_crawl_job(
+            db=db,
+            task_id=task.id,
+            job_id=job_id
+        )
 
     except Exception as e:
         db.rollback()
@@ -160,63 +182,6 @@ def get_status_of_jobs(status_type):
         "success": True,
         "results": [dict(row) for row in rows]
     }), 200
-
-@bp.route('/scrape-products', methods=('POST',))
-def scrape_products():
-    if not request.is_json:
-        return jsonify({
-            "success": False,
-            "error_message": "Content-Type must be application/json"
-        }), 400
-    
-    data = request.get_json()
-
-    url = data.get('url', None)
-
-    error = check_url(url)
-
-    if error:
-        return jsonify({
-            "success": False,
-            "error_message": error
-        }), 400
-    
-    website_id = None
-    url_id = None
-    
-    try:
-        db = get_db()
-
-        job_id = create_crawl_job(
-            db=db,
-            job_type='EXTRACT')
-
-        website_id = create_website(
-            db,
-            url=url,
-            job_id=job_id)
-        
-        db.commit()
-
-        task = extract_hardware_info_task.delay(job_id, website_id, url_id, url)
-
-        assign_celery_task_id_to_crawl_job(
-            db=db,
-            task_id=task.id,
-            job_id=job_id)
-
-    except Exception as e:
-        db.rollback()
-        return jsonify({
-            "success": False,
-            "error_message": str(e)
-        }), 500
-
-    return jsonify({
-        "success": True,
-        "message": "Request is valid. [ACCEPTED]",
-    }), 202
-
 
 @bp.route('/scrape-links/result/<job_id>', methods=('GET',))
 def get_scraped_links(job_id):
@@ -294,74 +259,6 @@ def get_scraped_links(job_id):
         "results": processed_websites,
         "total_urls_crawled": total_count,
         "success": True,
-    }), 200
-
-@bp.route('/scrape-products/result/<job_id>', methods=('GET',))
-def get_scraped_products(job_id):
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT
-            i.website_id,
-            i.url_id,
-            i.item_id,
-            i.name,
-            i.description,
-            i.price,
-            i.brand,
-            i.product_code,
-            i.availability,
-            COALESCE(u.url_id, w.website_id) AS source_id,
-            COALESCE(u.url_address, w.website_url) AS source_url,
-            -- SQLite builds a valid JSON array of objects for all internal links
-            json_group_array(
-                json_object(
-                    'specification_id', s.specification_id,
-                    'category_name', s.category_name,
-                    'category_value', s.category_value
-                )
-            ) AS specs
-        FROM item i
-        LEFT JOIN website w ON w.website_id = i.website_id
-        LEFT JOIN internal_url u ON u.url_id = i.url_id
-        LEFT JOIN specification s ON s.item_id = i.item_id
-        WHERE i.job_id = ?
-        GROUP BY i.item_id
-        """, (job_id,)
-    ).fetchall()
-
-    processed_products = []
-    
-
-    for row in rows:
-        specs = json.loads(row['specs'])
-
-        # clean up empty artifacts 
-        if specs and specs[0]['specification_id'] is None:
-            specs = []
-        
-
-        processed_products.append({
-            'source_id': row['source_id'],
-            'source_url': row['source_url'],
-            'website_id': row['website_id'],
-            'url_id': row['url_id'],
-            'item_id': row['item_id'],
-            'name': row['name'],
-            'description': row['description'],
-            'price': row['price'],
-            'brand': row['brand'],
-            'product_code': row['product_code'],
-            'availability': row['availability'],
-            'specs': specs
-        })
-
-    total_count = len(processed_products)
-
-    return jsonify({
-        "success": True,
-        "total_products_found": total_count,
-        "results": processed_products
     }), 200
 
 @bp.route('/delete/<job_id>', methods=('DELETE',))

@@ -1,6 +1,9 @@
 import os
 import re
 
+from flask import jsonify
+
+
 import requests
 from difflib import SequenceMatcher
 from functools import partial
@@ -31,6 +34,7 @@ def is_valid_range(num, max=5):
     if 1 <= num <= max:
         return num
     return None
+
 
 
 async def bfs(url, max_depth, max_pages):
@@ -286,6 +290,13 @@ class MaxPagesError(Exception):
         super().__init__(log_message) # passing the log message to base Exception class
         self.log_message = log_message
 
+class CODE_BUG(Exception):
+    def __init__(self, error_code='CODE_BUG', error_message='Error in the code. [For developers].', log_message=''):
+        super().__init__(f"{log_message} {error_message}") # passing the log message to base Exception class
+        self.error_code = error_code
+        self.log_message = log_message
+        self.error_message = error_message
+
 class CRAWL_FAILED(Exception):
     def __init__(self, error_code='CRAWLING_FAILURE', log_message='Crawling pipeline failure'):
         super().__init__(log_message) # passing the log message to base Exception class
@@ -372,8 +383,14 @@ def check_url(url):
         if not valid_url:
             raise UrlError
     except UrlError:
-        error = "Invalid URL Entered"
+        error = "Badly formatted or improper URL entered. A good URL looks like https://example.com"
     except Exception:
         error = "Misc Error"
     return error
         
+
+def return_bad_input_response(error_message="Bad Input"):
+    return jsonify({
+        "success": False,
+        "error_message": error_message
+    }), 400
