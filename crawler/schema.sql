@@ -71,6 +71,12 @@ CREATE TABLE item (
     FOREIGN KEY (url_id) REFERENCES internal_url (url_id)
 );
 
+CREATE UNIQUE INDEX idx_unique_item_product_code
+ON item (website_id, replace(replace(replace(lower(product_code), '/', ''), '-', ''), ' ', ''))
+WHERE product_code IS NOT NULL
+  AND trim(product_code) <> ''
+  AND lower(trim(product_code)) NOT IN ('na', 'n/a', 'none', 'null', 'not available');
+
 
 CREATE TABLE duplicate_item (
     duplicate_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +102,6 @@ CREATE TABLE specification (
     category_value TEXT,
     FOREIGN KEY (item_id) REFERENCES item (item_id) ON DELETE CASCADE
 );
-
 
 
 

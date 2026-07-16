@@ -66,8 +66,8 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 						"redirected_status_code": result.redirected_status_code, # final redirect destination
 						"number_of_images": len(result.media.get("images", [])),
 						"number_of_internal_links": len(result.links.get("internal", [])),
-						"extracted_content": json.loads(result.extracted_content) if result.success and isinstance(result.extracted_content, list) else None,
-						"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None,
+						"extracted_content": json.loads(result.extracted_content) if result.success and result.extracted_content else None,
+						"markdown": result.markdown.raw_markdown[:400] if result.success and result.markdown else None,
 					}
 				else:
 					print(f"Duplicated URL: {url}")
@@ -96,7 +96,7 @@ def process_streamed_crawl_result(pages_by_depth, result):
 		"redirected_status_code": result.redirected_status_code, # final redirect destination
 		"number_of_images": len(result.media.get("images", [])),
 		"number_of_internal_links": len(result.links.get("internal", [])),
-		"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None
+		"markdown": result.markdown.raw_markdown[:800] if result.success and result.markdown else None
 	})
 	return pages_by_depth
 
@@ -117,7 +117,7 @@ def process_crawl_result(results):
 			"redirected_status_code": result.redirected_status_code, # final redirect destination
 			"number_of_images": len(result.media.get("images", [])),
 			"number_of_internal_links": len(result.links.get("internal", [])),
-			"markdown": result.markdown.raw_markdown[:200] if result.success and result.markdown else None
+			"markdown": result.markdown.raw_markdown[:800] if result.success and result.markdown else None
 		})
 	return pages_by_depth
 
@@ -166,7 +166,6 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 		),
 		magic=True,
 		scraping_strategy=lxml_scraping_strategy,
-		wait_until="load",
 		scan_full_page=False,
     	delay_before_return_html=5.0,  # Additional delay
 		stream=True,
@@ -197,7 +196,7 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 
 async def extract_product(url):
 
-	urls = list(url)
+	urls = [url]
 
 	llm_browser_config = base_browser_config.clone(
 		enable_stealth=True
@@ -205,12 +204,14 @@ async def extract_product(url):
 
 	llm_run_config = base_crawler_run_config.clone(
 		magic=True,
+		wait_until="networkidle",
 		override_navigator=True,
 		simulate_user=True,
 		delay_before_return_html=8.0,  # Additional delay
 		extraction_strategy=base_llm_strategy,
 		proxy_config=None,
-		proxy_rotation_strategy=None
+		proxy_rotation_strategy=None,
+		stream=False
 	)
 
 	undetected_crawler_strategy = get_playwright_crawl_strategy(
@@ -218,20 +219,21 @@ async def extract_product(url):
 		browser_adapter=undetected_adapter
 	)
 
-	base_memory_dispatcher = get_memory_adaptive_dispatcher()
-
 	result = await run_crawler_to_scrape_markup(
 		urls,
 		browser_config=llm_browser_config,
 		run_config=llm_run_config,
-		crawler_strategy=undetected_crawler_strategy,
-		dispatcher=base_memory_dispatcher
+		crawler_strategy=undetected_crawler_strategy
 	)
 
-	if isinstance(result, dict) and result.get('exception', False):
-		return None
+	if isinstance(result, dict):		
+		if result.get(url, None):
+			return result[url]
+		
+		return result
+		
+	return None
 	
-	return result
 
 
 async def scrape_markup(urls):
@@ -270,7 +272,7 @@ async def scrape_markup(urls):
 
 if __name__ == "__main__":
 	print("Running...")
-	url = "https://www.apple.com/in/"
+	url = "https://www.primeabgb.com/online-price-reviews-india/asrock-challenger-radeon-rx-9070-xt-16gb-gddr6-pci-express-5-0-x16-graphics-card-rx9070xt-cl-16g/"
 
 	links = [
 		"https://www.apple.com/in/",
@@ -280,7 +282,7 @@ if __name__ == "__main__":
 		"https://www.apple.com/in/apple-watch-ultra-3/"
 	]
 	
-	result = asyncio.run(scrape_markup(links))
+	result = asyncio.run(extract_product(url))
 
 	# result = asyncio.run(get_links_using_bfs(url,  max_depth=2, max_pages=15))
 	print(result)

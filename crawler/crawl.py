@@ -12,7 +12,7 @@ from crawler.auth import login_required
 from crawler.db import get_db
 from crawler.helper import *
 from crawler.task import (
-    extract_hardware_info_task, scrape_links_task
+    extract_hardware_info_task, scrape_links_task, scrape_markup_in_bulk_task
 )
 
 bp = Blueprint('crawl', __name__, url_prefix="/crawl")
@@ -95,13 +95,13 @@ def get_scraped_links(job_id):
                     'number_of_images', i.number_of_images,
                     'number_of_internal_links', i.number_of_internal_links,
                     'error_message', i.error_message,
-                    'internal_url_job_id', i.job_id
+                    'internal_url_job_id', i.job_id,
+                    'markdown', i.markdown
                 )
             ) AS internal_links_json
         FROM crawl_job j
-        INNER JOIN website w ON w.job_id = j.job_id
-        -- LEFT JOIN ensures websites with 0 internal links still appear
-        LEFT JOIN internal_url i ON i.job_id = j.job_id AND i.website_id = w.website_id
+        LEFT JOIN internal_url i ON i.job_id = j.job_id
+        INNER JOIN website w ON w.website_id = i.website_id
         WHERE j.job_id = ?
         -- Grouping by website_id collapses all related links into the JSON array above
         GROUP BY w.website_id
@@ -131,6 +131,54 @@ def get_scraped_links(job_id):
         })
 
     return render_template("crawl/scraped-links-result.html", rows=processed_websites, count=total_count, job_id=job_id)
+
+@bp.route('/scrape-markup', methods=('POST',))
+def scrape_markup():
+    if request.method == 'POST':
+        
+        source = request.form['source'].strip()
+        job_id = None
+        url_address = None
+        website_id = None
+        
+        try:
+            db = get_db()
+
+            if source == "internal":
+                website_id = request.form['website-id'].strip()
+                url_address = request.form['url'].strip()
+                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP")
+                
+            elif source == "bulk":
+                website_id = request.form['website-id'].strip()
+                exists = find_website(website_id)
+                if not exists:
+                    raise Exception(f"Website ID = {website_id} does not exist in the database")
+                
+                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP_BULK")
+
+
+            elif source == "new":
+                job_id = create_crawl_job(db=db, job_type="SCRAPE_MARKUP_NEW")
+                url_address = request.form['url'].strip()
+                website_id = create_website(db, url_address, job_id)
+
+            else:
+                raise Exception("Source is required. Accepted values are 'internal', 'bulk' or 'new'.")
+                
+            db.commit()
+
+            task = scrape_markup_in_bulk_task.delay(job_id=job_id, website_id=website_id, url_address=url_address, source=source)
+
+            flash_info_alert('Processing....')
+            return redirect(url_for('crawl.get_status'))
+                
+
+        except Exception as e:
+            db.rollback()
+            flash_error_alert(str(e))
+
+
 
 @bp.route('/scrape-computer-hardware/result/<job_id>', methods=('GET',))
 @login_required
@@ -229,7 +277,7 @@ def scrape_hardware_info():
                         url=url,
                         job_id=job_id)
                     
-                    db.commit()
+                db.commit()
                     
 
                 task = extract_hardware_info_task.delay(job_id, website_id, url_id, url)

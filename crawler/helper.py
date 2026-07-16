@@ -71,6 +71,10 @@ def normalize_text(value):
     # "corsair-vengeance_8gb!!!" -> "corsair vengeance 8gb"
     return re.sub(r'[^a-z0-9]+', ' ', value).strip()
 
+
+def normalize_product_code(value):
+    return re.sub(r'[^a-z0-9]+', '', (value or '').lower())
+
 # Compares two normalized strings and returns a score from 0.0 to 1.0.
 # similarity("Corsair RAM 8GB", "corsair ram 8 gb")
 # Might return something high like 0.9.
@@ -98,18 +102,24 @@ def price_close(a, b, tolerance=0.02):
     b = normalize_price(b)
     if a is None or b is None:
         return True
+    if a == b:
+        return True
+    if max(a, b) == 0:
+        return False
     # does the percentage check:
     return abs(a - b) / max(a, b) <= tolerance
 
 
+# fuzzy duplicate names/brands/prices.
 def is_duplicated_product(db, website_id, resp):
-    product_code = (resp.get('product_code') or '').strip()
+    product_code = normalize_product_code(resp.get('product_code'))
 
     if product_code:
         row = db.execute("""
             SELECT item_id
             FROM item
-            WHERE website_id = ? AND lower(product_code) = lower(?)
+            WHERE website_id = ?
+              AND replace(replace(replace(lower(product_code), '/', ''), '-', ''), ' ', '') = ?
             """,
             (website_id, product_code)
         ).fetchone()
@@ -131,13 +141,13 @@ def is_duplicated_product(db, website_id, resp):
         brand_score = similarity(resp.get('brand'), item['brand'])
 
         if (
-            name_score >= 0.92
+            name_score >= 0.88
             and brand_score >= 0.85
             and price_close(resp.get('price'), item['price'])
         ):
             return True
-        
-
+    
+    return False
 
 
 def call_firecrawl_map(url):

@@ -17,14 +17,18 @@
   {% for row in rows %}
   <div class="col-12">
     <table class="table table-responsive table-bordered caption-top">
-    <caption class="fw-light fst-italic fs-6">Extracted from <a href="{{ row['source_url'] }}" target="_blank" rel="nofollow">{{ row['source_url'] }}</a></caption>
+    <caption class="fw-light fs-6">Extracted from <span class="fst-italic">
+      <a href="{{ row['source_url'] }}" target="_blank" rel="nofollow">{{ row['source_url'] }}</a>
+    </span>
+
+    </caption>
     <thead>
-      <th scope="col">ITEM_ID</th>
+      <th scope="col">ID</th>
       <th scope="col">NAME</th>
-      <th scope="col">DESC</th>
+      <th scope="col">DESC (AI gen.)</th>
       <th scope="col">PRICE</th>
       <th scope="col">BRAND</th>
-      <th scope="col">PRODUCT_CODE</th>
+      <th scope="col">SKU</th>
       <th scope="col">AVAILABILITY</th>
     </thead>
     <tbody>
@@ -32,10 +36,10 @@
         <td>
           {{ row['item_id'] }}
         </td>
-        <td class="fw-light fst-italic fs-6">
+        <td class="fw-light fs-6">
           {{ row['name'] }}
         </td>
-        <td class="fw-light fst-italic fs-6">
+        <td class="fw-light fs-6">
           {{ row['description'] }}
         </td>
         <td>
@@ -55,18 +59,17 @@
       {% if row['specs'] %}
       <tr>
         <td colspan="3">
-            <table class="table table-sm table-bordered table-responsive table-hover">
-              <thead>
-                <th scope="col">SPEC CATEGORY</th>
-                <th scope="col">SPEC</th>
-              </thead>
+            <table class="table table-sm table-bordered table-responsive table-hover caption-top">
+              <caption class="fw-light fs-6">
+                Specs of <span class="fst-italic">{{ row['name'] }}</span>
+              </caption>
               <tbody>
                 {% for spec in row['specs'] %}
                 <tr>
-                  <td>
+                  <td class="fw-bold">
                     {{ spec['category_name'] }}
                   </td>
-                  <td>
+                  <td class="">
                     {{ spec['category_value'] }}
                   </td>
                 </tr>

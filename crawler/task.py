@@ -3,7 +3,7 @@ import asyncio
 from crawler import celery_global_instance
 from crawler.db import get_db
 from crawler.helper import (
-    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED, scrape_html
+    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED, scrape_html, is_duplicated_product
 )
 
 
@@ -105,34 +105,67 @@ def extract_hardware_info_task(self, job_id, website_id, url_id, url):
             # Run your async function to completion inside the safe loop
             response = loop.run_until_complete(scrape_product(url))
 
-            if isinstance(response, dict) and response['result']:
-
-                for resp in response['result']:
-                    row = (resp['name'], resp['short_description'], resp['price'], resp['brand'], resp['product_code'], resp['availability'], job_id, url_id, website_id)
-
-                    curr = db.execute("""
-                        INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, row)
-                    
-                    item_id = curr.lastrowid
-
-                    if resp.get('specs', []):
-
-                        _rows = []
-                        for spec in resp['specs']:
-                            _rows.append((item_id, spec['category'], spec['value']))
-
-                        db.executemany("""
-                            INSERT INTO specification (item_id, category_name, category_value)
-                            VALUES (?, ?, ?)
-                        """,
-                        _rows)
+            if isinstance(response, dict):
+                if response.get('exception', False):
+                    raise CRAWL_FAILED(
+                        log_message=response.get('error', 'Exception raised by the crawling engine.')
+                    )
+            
+                elif response.get('error_message', None):
+                    raise CRAWL_FAILED(
+                        log_message=f"{response.get('error_message')} status_code={response.get('status_code')}"
+                    )
+            
                 
-                mark_crawl_job_success(db, job_id)
+                elif isinstance(response.get('extracted_content', None), list):
+                    for resp in response.get('extracted_content'):
+
+                        if is_duplicated_product(db, website_id, resp):
+                            continue
+
+                        row = (
+                            resp['name'],
+                            resp['short_description'],
+                            resp['price'],
+                            resp['brand'],
+                            resp['product_code'],
+                            resp['availability'],
+                            job_id,
+                            url_id, 
+                            website_id)
+
+
+                        curr = db.execute("""
+                            INSERT INTO item (name, description, price, brand, product_code, availability, job_id, url_id, website_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, row)
+                        
+                        item_id = curr.lastrowid
+
+                        if resp.get('specs', []):
+
+                            _rows = []
+                            for spec in resp['specs']:
+                                _rows.append((item_id, spec['category'], spec['value']))
+
+                            db.executemany("""
+                                INSERT INTO specification (item_id, category_name, category_value)
+                                VALUES (?, ?, ?)
+                            """,
+                            _rows)
+                    
+                    mark_crawl_job_success(db, job_id)
+                
+                else:
+                    raise CRAWL_FAILED(
+                        log_message="Misc. Error"
+                    )
+
 
             else:
-                raise CRAWL_FAILED(log_message="No Response. Crawler thrown an error")
+                raise CRAWL_FAILED(
+                    log_message="Misc. Error 2"
+                )
             
         except Exception as e:
             db.rollback()
@@ -141,7 +174,7 @@ def extract_hardware_info_task(self, job_id, website_id, url_id, url):
         
 
 @celery_global_instance.task(bind=True, ignore_result=False)
-def scrape_markup_in_bulk_task(self, job_id, website_id):
+def scrape_markup_in_bulk_task(self, job_id, website_id, url_address=None, source=None):
     from crawler import create_app
 
     flask_app = create_app()
@@ -152,18 +185,28 @@ def scrape_markup_in_bulk_task(self, job_id, website_id):
 
             mark_crawl_job_started(db, self.request.id, job_id)
 
-            urls = db.execute("""
-            SELECT url_address FROM internal_url
-            WHERE website_id = ?
-            """,
-            (website_id,)
-            ).fetchall()
+            urls = []
 
+            if source == "bulk" and website_id:
+                query_result = db.execute("""
+                    SELECT url_address FROM internal_url
+                    WHERE website_id = ?
+                """,
+                (website_id,)
+                ).fetchall()
+
+                if query_result:
+                    urls = [q['url_address'] for q in query_result]
+
+            elif source in ('new', 'internal') and url_address:
+                urls = list(url_address)
+            
+            
 
             if not urls:
-                raise Exception(f"No URLs Found for the website_id={website_id}")
+                raise Exception(f"Bad Input.")
 
-            _urls = [url['url_address'] for url in urls]
+            
 
             try:
             # Check if an event loop is already assigned to this worker thread
@@ -175,7 +218,7 @@ def scrape_markup_in_bulk_task(self, job_id, website_id):
                 asyncio.set_event_loop(loop)
                 
             # Run your async function to completion inside the safe loop
-            response = loop.run_until_complete(scrape_html(_urls))
+            response = loop.run_until_complete(scrape_html(urls))
 
 
             if isinstance(response, dict) and response.get('exception', False):
@@ -187,6 +230,7 @@ def scrape_markup_in_bulk_task(self, job_id, website_id):
 
             for url, resp in response.items():
                 rows.append((website_id, url, resp['url'], resp['status_code'], resp['page_title'], resp['page_description'], resp['error_message'], resp['redirected_status_code'], resp['number_of_images'], resp['number_of_internal_links'], resp['markdown'], job_id))
+        
 
             db.executemany(
                 """

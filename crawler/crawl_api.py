@@ -109,7 +109,7 @@ def scrape_markup_bulk():
 
         db.commit()
 
-        task = scrape_markup_in_bulk_task.delay(job_id, website_id)
+        task = scrape_markup_in_bulk_task.delay(job_id=job_id, website_id=website_id, source="bulk")
 
     except Exception as e:
         db.rollback()
@@ -173,9 +173,6 @@ def scrape_products():
 
     url = data.get('url', None)
 
-    website_id = None
-    url_id = None
-
     error = check_url(url)
 
     if error:
@@ -183,6 +180,9 @@ def scrape_products():
             "success": False,
             "error_message": error
         }), 400
+    
+    website_id = None
+    url_id = None
     
     try:
         db = get_db()
@@ -218,7 +218,6 @@ def scrape_products():
     }), 202
 
 
-
 @bp.route('/scrape-links/result/<job_id>', methods=('GET',))
 def get_scraped_links(job_id):
     db = get_db()
@@ -228,7 +227,6 @@ def get_scraped_links(job_id):
             w.website_id, 
             w.website_url,
             j.job_id,
-            i.url_id,
             w.max_depth,
             w.max_pages,
             CASE 
@@ -250,14 +248,13 @@ def get_scraped_links(job_id):
                     'number_of_internal_links', i.number_of_internal_links,
                     'error_message', i.error_message,
                     'internal_url_job_id', i.job_id,
-                    'markdown', i.markdown
+                    'markdown', i.markdown,
+                    'created', i.created
                 )
             ) AS internal_links_json
         FROM crawl_job j
-
-        RIGHT JOIN website w ON w.website_id = i.website_id
-
         LEFT JOIN internal_url i ON i.job_id = j.job_id
+        INNER JOIN website w ON w.website_id = i.website_id
 
         WHERE j.job_id = ?
         -- Grouping by website_id collapses all related links into the JSON array above
