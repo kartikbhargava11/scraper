@@ -94,12 +94,7 @@
                     </div>
                   </td>
                   <td>
-                    <form method="post" action="{{url_for('crawl.scrape_markup')}}">
-                      <input type="hidden" name="url" value="{{ link['url_address'] }}">
-                      <input type="hidden" name="website-id" value="{{ row['website_id'] }}">
-                      <input type="hidden" name="source" value="internal">
-                      <input type="submit" class="btn btn-outline-dark rounded-0" value="Re-Audit">
-                    </form>
+                    <a class="btn btn-outline-dark rounded-0" href="{{ url_for('crawl.get_scraped_markup', job_id=link['internal_url_job_id']) }}">View_Markup</a>
                   </td>
                 </tr>
                 {% endfor %}

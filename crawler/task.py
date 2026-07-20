@@ -3,7 +3,7 @@ import asyncio
 from crawler import celery_global_instance
 from crawler.db import get_db
 from crawler.helper import (
-    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, scrape_product, CRAWL_FAILED, scrape_html, is_duplicated_product
+    mark_crawl_job_started, mark_crawl_job_success, mark_crawl_job_failure, call_firecrawl_map, bfs, CRAWL_FAILED, scrape_html, product_extractor
 )
 
 
@@ -174,3 +174,48 @@ def scrape_markup_task(self, job_id, website_id, url_address=None, source=None):
             mark_crawl_job_failure(db, str(e), job_id)
             raise
 
+@celery_global_instance.task(bind=True, ignore_result=False)
+def extract_products_task(self, job_id, url_id):
+    from crawler import create_app
+
+    flask_app = create_app()
+    with flask_app.app_context():
+        db = get_db()
+
+        # This job is created by the Flask route when the user clicks
+        # "Extract Products". Mark it as started before doing any real work so
+        # the status page reflects that the Celery worker has picked it up.
+        mark_crawl_job_started(db, self.request.id, job_id)
+
+        try:
+            # Product extraction is based on already-scraped markdown. We load
+            # the internal_url row instead of crawling the URL again.
+            row = db.execute(
+                """
+                SELECT * FROM internal_url
+                WHERE url_id = ?
+                """,
+                (url_id,)
+            ).fetchone()
+
+            if not row:
+                raise CRAWL_FAILED(log_message="A valid url_id is not found.")
+            
+            if not row["markdown"]:
+                raise CRAWL_FAILED(log_message="Markdown is not found.")
+            
+            # The helper owns the product pipeline:
+            # markdown -> LLM extraction -> validation -> dedupe -> DB insert.
+            product_extractor(db=db, record=row, job_id=job_id)
+
+            db.commit()
+
+            # Mark success only after item/duplicate_item inserts have been
+            # committed successfully.
+            mark_crawl_job_success(db, job_id)
+
+        
+        except Exception as e:
+            db.rollback()
+            mark_crawl_job_failure(db, str(e), job_id)
+            raise

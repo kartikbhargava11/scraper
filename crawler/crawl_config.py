@@ -91,7 +91,6 @@ base_browser_config = BrowserConfig(
 	use_persistent_context=True,
 	extra_args=["--disable-extensions"],
 	sleep_on_close=True, # Add a small delay when closing browser (can help with cleanup issues).
-	browser_mode="docker"
 )
 
 
@@ -105,14 +104,14 @@ base_crawler_run_config = CrawlerRunConfig(
 	),
 	page_timeout=240000,
 	override_navigator=True,
-	wait_until="load",
+	wait_until="networkidle",
 	cache_mode=CacheMode.BYPASS,
 	excluded_selector="#ads, .tracker, _csrf",
 	scan_full_page=True,
 	scroll_delay=0.5,
 	stream=False,
 	simulate_user=True,
-	prefetch=False,
+	remove_forms=True,
 	exclude_external_images=True,
 	exclude_external_links=True,
 	process_iframes=False, # Inlines iframe content for single-page extraction.
@@ -230,7 +229,7 @@ def get_crawling_filter_chain(url):
 		URLPatternFilter(patterns=["*[?]*", "*account*", "*cart*"], reverse=True),
 
 		# matches URL patterns using wildcard syntax
-		URLPatternFilter(patterns=["*product*", "*buy*", "*price*", "*online*"]),
+		# URLPatternFilter(patterns=["*product*", "*buy*", "*price*", "*online*"]),
 
 		# content type filtering
 		ContentTypeFilter(allowed_types=["text/html"])
@@ -265,3 +264,16 @@ async def external_fetch(url: str) -> str:
 			print(resp.status)
 			response = await resp.text()
 			return response
+
+def prepare_crawl_result(result):
+    return {
+        "url": result.url, # The final crawled URL
+        "page_title": result.metadata.get("title") or result.metadata.get("og:title"),
+        "page_description": result.metadata.get("description") or result.metadata.get("og:description"),
+        "error_message": result.error_message,
+        "status_code": result.status_code,
+        "redirected_status_code": result.redirected_status_code, # final redirect destination
+        "number_of_images": len(result.media.get("images", [])),
+        "number_of_internal_links": len(result.links.get("internal", [])),
+        "markdown": result.markdown.fit_markdown if isinstance(result.markdown, dict) else None
+    }

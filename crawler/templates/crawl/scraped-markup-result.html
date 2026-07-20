@@ -8,7 +8,7 @@
   </div>
   {% for row in rows %}
   <div class="col-12">
-    <table class="table table-responsive">
+    <table class="table table-bordered table-responsive">
       <thead>
         <th scope="col">JOB ID</th>
         <th scope="col">WEBSITE ID</th>
@@ -16,6 +16,7 @@
         <th scope="col">TIME(sec.)</th>
         <th scope="col">FINAL STATUS</th>
         <th scope="col">ERROR</th>
+        <th scope="col">Action</th>
       </thead>
       <tbody>
         <tr>
@@ -37,23 +38,36 @@
           <td>
             {{row['error_message']}}
           </td>
+          <td>
+            <form method="post" action="{{ url_for('crawl.extract_product') }}">
+              <input type="hidden" value="{{row['url_id']}}" name="url-id" id="url-id">
+              <input type="hidden" value="internal" name="source" id="source">
+              <input type="submit" class="btn btn-dark rounded-0" value="Extract Products">
+            </form>
+          </td>
         </tr>
         <tr>
-          <td colspan="6">
+          <td colspan="7">
             <table class="table table-sm table-responsive caption-top">
               <caption>Markup below.</caption>
               <thead>
-                <th scope="col"></th>
+                <th scope="col">Markup</th>
               </thead>
               <tbody>
                 <tr>
-                  <td class="text-wrap" style="max-width: 80vw;">
-                    <pre>
+                  
+                  <td>
+                    {% if row['markdown'] %}
+                    <pre class="p-0 m-0" style="max-width: 45vw;">
                       <code>
                         {{ row['markdown'] }}
                       </code>
                     </pre>
+                    {% else %}
+                      <span>Not Available</span>
+                    {% endif %}
                   </td>
+                  
                 </tr>
               </tbody>
             </table>

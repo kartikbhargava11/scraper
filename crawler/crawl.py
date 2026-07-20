@@ -4,7 +4,7 @@
 # complex crawling and background celery task logic not done here
 import json
 from flask import (
-    Blueprint, g, redirect, render_template, request, url_for, jsonify
+    Blueprint, g, redirect, render_template, request, url_for
 )
 from werkzeug.exceptions import abort
 
@@ -12,13 +12,12 @@ from crawler.auth import login_required
 from crawler.db import get_db
 from crawler.helper import *
 from crawler.task import (
-    scrape_links_task, scrape_markup_task
+    scrape_links_task, scrape_markup_task, extract_products_task
 )
 
 bp = Blueprint('crawl', __name__, url_prefix="/crawl")
 
 @bp.route('/scrape-links', methods=('GET', 'POST'))
-@login_required
 def scrape_links():
     if request.method == 'POST':
         url = request.form['url'].strip()
@@ -63,125 +62,17 @@ def scrape_links():
             
     # return the template for GET request
     return render_template('crawl/scrape-links.html')
-    
-@bp.route('/scrape-links/result/<job_id>', methods=('GET',))
-@login_required
-def get_scraped_links(job_id):
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT 
-            w.website_id, 
-            w.website_url,
-            j.job_id,
-            i.url_id,
-            w.max_depth,
-            w.max_pages,
-            CASE 
-                WHEN j.finished_at IS NOT NULL AND j.started_at IS NOT NULL 
-                THEN (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) 
-                ELSE 0 
-            END AS diff_seconds,
-            -- SQLite builds a valid JSON array of objects for all internal links
-            json_group_array(
-                json_object(
-                    'url_id', i.url_id,
-                    'url_address', i.url_address,
-                    'depth', i.depth,
-                    'page_title', i.page_title,
-                    'page_description', i.page_description,
-                    'status_code', i.status_code,
-                    'redirected_status_code', i.redirected_status_code,
-                    'number_of_images', i.number_of_images,
-                    'number_of_internal_links', i.number_of_internal_links,
-                    'error_message', i.error_message,
-                    'internal_url_job_id', i.job_id,
-                    'markdown', i.markdown
-                )
-            ) AS internal_links_json
-        FROM crawl_job j
-        LEFT JOIN internal_url i ON i.job_id = j.job_id
-        INNER JOIN website w ON w.website_id = i.website_id
-        WHERE j.job_id = ?
-        -- Grouping by website_id collapses all related links into the JSON array above
-        GROUP BY w.website_id
-        """, (job_id,)
-    ).fetchall()
 
-    processed_websites = []
-    total_count = 0
-
-    for row in rows:
-        links = json.loads(row['internal_links_json'])
-
-        # clean up empty artifacts 
-        if links and links[0]['url_id'] is None:
-            links = []
-
-        total_count += len(links)
-
-        processed_websites.append({
-            'website_id': row['website_id'],
-            'website_url': row['website_url'],
-            'job_id': row['job_id'],
-            'max_depth': row['max_depth'],
-            'max_pages': row['max_pages'],
-            'diff_seconds': row['diff_seconds'],
-            'links': links
-        })
-
-    return render_template("crawl/scraped-links-result.html", rows=processed_websites, count=total_count, job_id=job_id)
-
-@bp.route('/scrape-markup/result/<job_id>', methods=('GET',))
-@login_required
-def get_scraped_markup(job_id):
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT 
-            j.job_id,
-            w.website_id,
-            w.website_url,
-            i.url_id,
-            i.url_address,
-            i.redirected_url_address,
-            i.error_message,
-            i.status_code,
-            i.redirected_status_code,
-            i.page_description,
-            i.page_title,
-            i.markdown,
-            i.created,
-            i.number_of_internal_links,
-            i.number_of_images,
-            CASE 
-                WHEN j.finished_at IS NOT NULL AND j.started_at IS NOT NULL 
-                THEN (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) 
-                ELSE 0 
-            END AS diff_seconds
-        FROM crawl_job j
-        LEFT JOIN internal_url i ON i.job_id = j.job_id
-        INNER JOIN website w ON w.website_id = i.website_id
-        WHERE j.job_id = ?
-        """, (job_id,)
-    ).fetchall()
-
-
-    return render_template('crawl/scraped-markup-result.html', rows=rows)
-
-
-@bp.route('/scrape-markup', methods=('POST', 'GET'))
+@bp.route('/scrape-markup', methods=('GET', 'POST'))
 def scrape_markup():
     if request.method == 'POST':
         try:
-
             source = request.form.get('source', '').strip()
 
             if source not in ('bulk', 'external', 'internal'):
                 raise CODE_BUG(
                     log_message="Accepted values for source are 'bulk', 'external', or 'internal'."
                 )
-            
             
             website_id = None
             url = None
@@ -242,10 +133,174 @@ def scrape_markup():
             return redirect(url_for('crawl.get_status'))
 
     return render_template("crawl/scrape-markup.html")
+  
+@bp.route('/scrape-links/result/<job_id>', methods=('GET',))
+def get_scraped_links(job_id):
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT 
+            w.website_id, 
+            w.website_url,
+            j.job_id,
+            i.url_id,
+            w.max_depth,
+            w.max_pages,
+            CASE 
+                WHEN j.finished_at IS NOT NULL AND j.started_at IS NOT NULL 
+                THEN (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) 
+                ELSE 0 
+            END AS diff_seconds,
+            -- SQLite builds a valid JSON array of objects for all internal links
+            json_group_array(
+                json_object(
+                    'url_id', i.url_id,
+                    'url_address', i.url_address,
+                    'depth', i.depth,
+                    'page_title', i.page_title,
+                    'page_description', i.page_description,
+                    'status_code', i.status_code,
+                    'redirected_status_code', i.redirected_status_code,
+                    'number_of_images', i.number_of_images,
+                    'number_of_internal_links', i.number_of_internal_links,
+                    'error_message', i.error_message,
+                    'internal_url_job_id', i.job_id
+                )
+            ) AS internal_links_json
+        FROM crawl_job j
+        LEFT JOIN internal_url i ON i.job_id = j.job_id
+        INNER JOIN website w ON w.website_id = i.website_id
+        WHERE j.job_id = ?
+        -- Grouping by website_id collapses all related links into the JSON array above
+        GROUP BY w.website_id
+        """, (job_id,)
+    ).fetchall()
+
+    processed_websites = []
+    total_count = 0
+
+    for row in rows:
+        links = json.loads(row['internal_links_json'])
+
+        # clean up empty artifacts 
+        if links and links[0]['url_id'] is None:
+            links = []
+
+        total_count += len(links)
+
+        processed_websites.append({
+            'website_id': row['website_id'],
+            'website_url': row['website_url'],
+            'job_id': row['job_id'],
+            'max_depth': row['max_depth'],
+            'max_pages': row['max_pages'],
+            'diff_seconds': row['diff_seconds'],
+            'links': links
+        })
+
+    return render_template("crawl/scraped-links-result.html", rows=processed_websites, count=total_count, job_id=job_id)
+
+@bp.route('/scrape-markup/result/<job_id>', methods=('GET',))
+def get_scraped_markup(job_id):
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT 
+            j.job_id,
+            w.website_id,
+            w.website_url,
+            i.url_id,
+            i.url_address,
+            i.redirected_url_address,
+            i.error_message,
+            i.status_code,
+            i.redirected_status_code,
+            i.page_description,
+            i.page_title,
+            i.markdown,
+            i.created,
+            i.number_of_internal_links,
+            i.number_of_images,
+            CASE 
+                WHEN j.finished_at IS NOT NULL AND j.started_at IS NOT NULL 
+                THEN (strftime('%s', j.finished_at) - strftime('%s', j.started_at)) 
+                ELSE 0 
+            END AS diff_seconds
+        FROM crawl_job j
+        LEFT JOIN internal_url i ON i.job_id = j.job_id
+        INNER JOIN website w ON w.website_id = i.website_id
+        WHERE j.job_id = ?
+        """, (job_id,)
+    ).fetchall()
+
+    if not rows:
+        return redirect(url_for('home.page_not_found'))
+
+
+    return render_template('crawl/scraped-markup-result.html', rows=rows)
+
+@bp.route('/extract-product', methods=('POST',))
+def extract_product():
+    db = get_db()
+
+    try:
+        # The result page sends the internal_url id for the saved page markup.
+        # This route does not scrape the page again; it starts extraction from
+        # markdown that already exists in the database.
+        url_id = request.form.get('url-id', '').strip()
+        source = request.form.get('source', '').strip()
+
+        # Keep this endpoint narrow for now. Product extraction should happen
+        # only for URLs already stored in internal_url.
+        if source != "internal":
+            raise CODE_BUG(log_message="Wrong source provided.")
+
+        if not url_id:
+            raise CODE_BUG(log_message="A valid url_id is required.")
+
+        # Validate the internal URL before creating a crawl_job. This avoids
+        # creating empty jobs for bad form submissions.
+        row = find_internal_url(db, url_id)
+
+        if not row:
+            raise CODE_BUG(log_message="A valid url_id is required.")
+        
+        # The Celery task depends on saved markdown. If it is missing, the user
+        # should scrape markup for this URL before extracting products.
+        if not row['markdown']:
+            raise CODE_BUG(log_message="Markdown is not present.")
+
+        # Product extraction is its own background job, separate from the
+        # original scrape-markup job, so the status page can track it clearly.
+        job_id = create_crawl_job(
+            db=db,
+            job_type="EXTRACT_PRODUCT_INTERNAL"
+        )
+
+        db.commit()
+
+        # Queue the real extraction work. The worker will load the markdown,
+        # extract product data, dedupe it, and save it into item/duplicate_item.
+        task = extract_products_task.delay(job_id, url_id)
+
+        # Store the Celery task id against the job for status/debugging.
+        assign_celery_task_id_to_crawl_job(
+            db=db,
+            task_id=task.id,
+            job_id=job_id
+        )
+
+        flash_info_alert('Extracting product...')
+        return redirect(url_for('crawl.get_status'))
+        
+    except Exception as e:
+        db.rollback()
+        flash_error_alert(str(e))
+        return redirect(url_for('home.page_not_found'))
+
 
 
 @bp.route('/check-status', methods=('GET',))
-@login_required
 def get_status():
     db = get_db()
     rows = db.execute(

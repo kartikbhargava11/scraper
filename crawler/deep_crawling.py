@@ -7,7 +7,7 @@ from crawl4ai import AsyncWebCrawler
 from crawler.crawl_config import (
 	lxml_scraping_strategy, undetected_adapter, base_browser_config, base_crawler_run_config, base_llm_strategy,
 	load_proxies_from_env, get_crawling_filter_chain, get_bfs_crawl_strategy, get_playwright_crawl_strategy,
-	get_http_crawl_strategy, external_fetch, get_memory_adaptive_dispatcher
+	get_http_crawl_strategy, external_fetch, get_memory_adaptive_dispatcher, prepare_crawl_result
 )
 
 
@@ -33,7 +33,7 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 					# avoids hammering the target site
 					# lower chances of 429/403
 					# makes crawler polite
-					await asyncio.sleep(2) # small delay between requests
+					await asyncio.sleep(3) # small delay between requests
 					return url, await crawler.arun(
 						url,
 						config=run_config or base_crawler_run_config,
@@ -57,17 +57,7 @@ async def run_crawler_to_scrape_markup(urls, browser_config=None, run_config=Non
 					print(f"{url} failed; [status_code={result.status_code}]")
 
 				if url not in payload:
-					payload[url] = {
-						"url": result.url, # The final crawled URL
-						"page_title": result.metadata.get("title") or result.metadata.get("og:title"),
-						"page_description": result.metadata.get("description") or result.metadata.get("og:description"),
-						"error_message": result.error_message,
-						"status_code": result.status_code,
-						"redirected_status_code": result.redirected_status_code, # final redirect destination
-						"number_of_images": len(result.media.get("images", [])),
-						"number_of_internal_links": len(result.links.get("internal", [])),
-						"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
-					}
+					payload[url] = prepare_crawl_result(result)
 				else:
 					print(f"Duplicated URL: {url}")
 
@@ -86,17 +76,7 @@ def process_streamed_crawl_result(pages_by_depth, result):
 	if depth not in pages_by_depth:
 		pages_by_depth[depth] = []
 
-	pages_by_depth[depth].append({
-		"url": result.url, # The final crawled URL
-		"page_title": result.metadata.get("title") or result.metadata.get("og:title"),
-		"page_description": result.metadata.get("description") or result.metadata.get("og:description"),
-		"error_message": result.error_message,
-		"status_code": result.status_code,
-		"redirected_status_code": result.redirected_status_code, # final redirect destination
-		"number_of_images": len(result.media.get("images", [])),
-		"number_of_internal_links": len(result.links.get("internal", [])),
-		"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
-	})
+	pages_by_depth[depth].append(prepare_crawl_result(result))
 	return pages_by_depth
 
 def process_crawl_result(results):
@@ -107,17 +87,7 @@ def process_crawl_result(results):
 		if depth not in pages_by_depth:
 			pages_by_depth[depth] = []
 
-		pages_by_depth[depth].append({
-			"url": result.url, # The final crawled URL
-			"page_title": result.metadata.get("title") or result.metadata.get("og:title"),
-			"page_description": result.metadata.get("description") or result.metadata.get("og:description"),
-			"error_message": result.error_message,
-			"status_code": result.status_code,
-			"redirected_status_code": result.redirected_status_code, # final redirect destination
-			"number_of_images": len(result.media.get("images", [])),
-			"number_of_internal_links": len(result.links.get("internal", [])),
-			"markdown": result.markdown.raw_markdown if result.success and result.markdown else None,
-		})
+		pages_by_depth[depth].append(prepare_crawl_result(result))
 	return pages_by_depth
 
 async def run_crawler_to_extract_links(url, browser_config=None, run_config=None, crawler_strategy=None):
@@ -131,8 +101,7 @@ async def run_crawler_to_extract_links(url, browser_config=None, run_config=None
 
 				async for result in await crawler.arun(
 					url,
-					config=run_config or base_crawler_run_config,
-					dispatcher=get_memory_adaptive_dispatcher()
+					config=run_config or base_crawler_run_config
 				):
 					pages_by_depth = process_streamed_crawl_result(pages_by_depth, result)
 
@@ -187,45 +156,6 @@ async def get_links_using_bfs(url, max_depth, max_pages):
 		run_config=bfs_run_config,
 		crawler_strategy=bfs_crawler_strategy
 	)
-
-
-
-async def extract_product(url):
-
-	urls = [url]
-
-	llm_browser_config = base_browser_config.clone(
-		enable_stealth=True
-	)
-
-	llm_run_config = base_crawler_run_config.clone(
-		magic=True,
-		wait_until="networkidle",
-		delay_before_return_html=8.0,  # Additional delay
-		extraction_strategy=base_llm_strategy,
-		proxy_config=None,
-		proxy_rotation_strategy=None
-	)
-
-	undetected_crawler_strategy = get_playwright_crawl_strategy(
-		browser_config=llm_browser_config,
-		browser_adapter=undetected_adapter
-	)
-
-	result = await run_crawler_to_scrape_markup(
-		urls,
-		browser_config=llm_browser_config,
-		run_config=llm_run_config,
-		crawler_strategy=undetected_crawler_strategy
-	)
-
-	if isinstance(result, dict):		
-		if result.get(url, None):
-			return result[url]
-		
-		return result
-		
-	return None
 	
 
 
@@ -240,7 +170,6 @@ async def scrape_markup(urls):
 
 	browser_config = base_browser_config.clone(
 		enable_stealth=True,
-		
 	)
 
 	run_config = base_crawler_run_config.clone(
@@ -268,7 +197,7 @@ async def scrape_markup(urls):
 
 if __name__ == "__main__":
 	print("Running...")
-	url = "https://www.primeabgb.com/online-price-reviews-india/asrock-challenger-radeon-rx-9070-xt-16gb-gddr6-pci-express-5-0-x16-graphics-card-rx9070xt-cl-16g/"
+	url = "https://roter-recycling.com/it/"
 
 	links = [
 		"https://www.apple.com/in/",
@@ -278,7 +207,7 @@ if __name__ == "__main__":
 		"https://www.apple.com/in/apple-watch-ultra-3/"
 	]
 	
-	result = asyncio.run(extract_product(url))
+	result = asyncio.run(get_links_using_bfs(url, max_depth=5, max_pages=20))
 
 	# result = asyncio.run(get_links_using_bfs(url,  max_depth=2, max_pages=15))
 	print(result)
